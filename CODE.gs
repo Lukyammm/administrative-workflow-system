@@ -601,7 +601,7 @@ const CACHE_TTL_ARMARIOS = 120;
 const CACHE_TTL_HISTORICO = 90;
 const CACHE_TTL_MOVIMENTACOES = 45;
 const CACHE_TTL_INDICE_ARMARIOS = 30;
-const LOCK_TIMEOUT_MS = 25000;
+const LOCK_TIMEOUT_MS = 5000;
 const RETRY_MAX_TENTATIVAS = 3;
 const RETRY_INTERVALO_MS = 180;
 const LIMIAR_LOG_LENTO_MS = 1200;
@@ -667,7 +667,6 @@ function ehErroTransitorio(mensagem) {
     texto.indexOf('temporarily unavailable') !== -1 ||
     texto.indexOf('internal error') !== -1 ||
     texto.indexOf('timed out') !== -1 ||
-    texto.indexOf('lock timeout') !== -1 ||
     texto.indexOf('exceeded maximum execution time') !== -1;
 }
 
