@@ -7472,8 +7472,24 @@ function obterOuCriarAbaDestino(planilha, nomeAba, cabecalhos) {
     aba = planilha.insertSheet(nomeAba);
   }
 
-  if (aba.getLastRow() === 0 && cabecalhos && cabecalhos.length) {
-    aba.getRange(1, 1, 1, cabecalhos.length).setValues([cabecalhos]);
+  if (cabecalhos && cabecalhos.length) {
+    var maxColunasDestino = aba.getMaxColumns();
+    if (maxColunasDestino < cabecalhos.length) {
+      aba.insertColumnsAfter(maxColunasDestino, cabecalhos.length - maxColunasDestino);
+    }
+
+    var cabecalhosDestino = aba.getRange(1, 1, 1, cabecalhos.length).getValues()[0];
+    var cabecalhosIguais = true;
+    for (var i = 0; i < cabecalhos.length; i++) {
+      if ((cabecalhosDestino[i] || '').toString() !== (cabecalhos[i] || '').toString()) {
+        cabecalhosIguais = false;
+        break;
+      }
+    }
+
+    if (aba.getLastRow() === 0 || !cabecalhosIguais) {
+      aba.getRange(1, 1, 1, cabecalhos.length).setValues([cabecalhos]);
+    }
   }
 
   return aba;
@@ -7496,9 +7512,14 @@ function copiarDepoisLimparAba(abaOrigem, abaDestino) {
     return 0;
   }
 
+  var maxColunasDestino = abaDestino.getMaxColumns();
+  if (maxColunasDestino < ultimaColuna) {
+    abaDestino.insertColumnsAfter(maxColunasDestino, ultimaColuna - maxColunasDestino);
+  }
+
   var destinoLinha = Math.max(abaDestino.getLastRow(), 1) + 1;
   abaDestino.getRange(destinoLinha, 1, dados.length, ultimaColuna).setValues(dados);
-  abaOrigem.deleteRows(2, quantidade);
+  abaOrigem.getRange(2, 1, quantidade, ultimaColuna).clearContent();
 
   return dados.length;
 }
@@ -7544,23 +7565,27 @@ function executarBackupSistema() {
     ];
 
     mapeamento.forEach(function(item) {
-      var abaOrigem = ssPrincipal.getSheetByName(item.origem);
-      if (!abaOrigem) {
-        relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba não encontrada.' });
-        return;
-      }
+      try {
+        var abaOrigem = ssPrincipal.getSheetByName(item.origem);
+        if (!abaOrigem) {
+          relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba não encontrada.' });
+          return;
+        }
 
-      var ultimaColuna = abaOrigem.getLastColumn();
-      if (ultimaColuna < 1) {
-        relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba sem colunas.' });
-        return;
-      }
+        var ultimaColuna = abaOrigem.getLastColumn();
+        if (ultimaColuna < 1) {
+          relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba sem colunas.' });
+          return;
+        }
 
-      var cabecalhos = abaOrigem.getRange(1, 1, 1, ultimaColuna).getValues()[0];
-      var abaDestino = obterOuCriarAbaDestino(item.arquivo, item.origem, cabecalhos);
-      var movidos = copiarDepoisLimparAba(abaOrigem, abaDestino);
-      totalRegistros += movidos;
-      relatorio.push({ aba: item.origem, movidos: movidos });
+        var cabecalhos = abaOrigem.getRange(1, 1, 1, ultimaColuna).getValues()[0];
+        var abaDestino = obterOuCriarAbaDestino(item.arquivo, item.origem, cabecalhos);
+        var movidos = copiarDepoisLimparAba(abaOrigem, abaDestino);
+        totalRegistros += movidos;
+        relatorio.push({ aba: item.origem, movidos: movidos });
+      } catch (erroAba) {
+        relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Erro: ' + erroAba.toString() });
+      }
     });
 
     registrarLog('BACKUP_EXECUTADO', 'Backup executado em ' + timestamp + '. Registros movidos: ' + totalRegistros);
