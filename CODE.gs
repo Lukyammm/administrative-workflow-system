@@ -6482,7 +6482,7 @@ function getRegistrosImagens(dados) {
 
         possuiRegistrosArmario = true;
 
-        var url = linha[8];
+        var url = linha[9];
         if (!url) {
           return;
         }
@@ -6498,8 +6498,8 @@ function getRegistrosImagens(dados) {
           responsavel: linha[7],
           dataHora: linha[8],
           fotoUrl: url,
-          fotoId: linha[9] || '',
-          fotoNome: linha[10] || ''
+          fotoId: linha[10] || '',
+          fotoNome: linha[11] || ''
         });
       });
     }
