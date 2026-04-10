@@ -2857,6 +2857,12 @@
         .armario-foto-thumb {
             margin-top: 6px;
         }
+        .foto-contingencia-btn {
+            border: none;
+            background: transparent;
+            padding: 0;
+            cursor: pointer;
+        }
 
         .armario-foto-thumb img {
             max-width: 140px;
@@ -5899,6 +5905,11 @@
             font-weight: 600;
             color: var(--primary-color);
             text-decoration: none;
+            border: none;
+            background: transparent;
+            padding: 0;
+            cursor: pointer;
+            font-size: 0.92rem;
         }
         .registro-imagem-link:hover {
             text-decoration: underline;
@@ -5907,6 +5918,66 @@
             text-align: center;
             color: var(--muted-color);
             padding: 18px 0;
+        }
+        .modal-image-viewer .image-viewer-content {
+            max-width: min(1120px, 96vw);
+            margin: auto;
+        }
+        .image-viewer-body {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+        }
+        .image-viewer-stage {
+            min-height: 56vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: color-mix(in srgb, var(--surface-color) 94%, var(--bg-color) 6%);
+            border: 1px solid color-mix(in srgb, var(--dark-color) 8%, transparent);
+            border-radius: 14px;
+            padding: 10px;
+        }
+        .image-viewer-stage img {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 10px;
+            object-fit: contain;
+        }
+        .image-viewer-nav {
+            border: 1px solid color-mix(in srgb, var(--dark-color) 10%, transparent);
+            background: var(--surface-color);
+            color: var(--text-color);
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            cursor: pointer;
+        }
+        .image-viewer-nav:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        .image-viewer-footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+        .image-viewer-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            text-align: left;
+        }
+        .image-viewer-meta strong {
+            color: var(--text-color);
+            font-size: 0.95rem;
+        }
+        .image-viewer-meta span,
+        .image-viewer-counter {
+            color: var(--muted-color);
+            font-size: 0.86rem;
         }
         /* Responsividade */
         @media (min-width: 1025px) {
