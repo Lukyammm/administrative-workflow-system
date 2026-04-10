@@ -55,6 +55,7 @@
                 },
                 usuarios: [],
                 logs: [],
+                registrosImagens: [],
                 carregamentoTermosId: 0,
                 filtrosTermos: {
                     status: 'todos',
@@ -768,6 +769,11 @@
             logsFiltroUsuario: document.getElementById('logs-filtro-usuario'),
             logsBusca: document.getElementById('logs-busca'),
             logsBtnLimpar: document.getElementById('logs-btn-limpar'),
+            tabelaRegistrosImagensBody: document.querySelector('#tabela-registros-imagens tbody'),
+            registrosImagensDataInicio: document.getElementById('registros-imagens-data-inicio'),
+            registrosImagensDataFim: document.getElementById('registros-imagens-data-fim'),
+            registrosImagensBusca: document.getElementById('registros-imagens-busca'),
+            registrosImagensBtnLimpar: document.getElementById('registros-imagens-btn-limpar'),
             backupExecutarBtn: document.getElementById('backup-executar'),
             backupResultado: document.getElementById('backup-resultado'),
             tabelaHistoricoVisitantesBody: document.querySelector('#tabela-historico-visitantes tbody'),
@@ -1535,6 +1541,12 @@
         const normalizarTexto = (valor) => (valor ?? '').toString().trim().toLowerCase();
         const normalizarIdentificador = (valor) => (valor ?? '').toString().trim();
         const padronizarNomeMaiusculo = (valor) => (valor ?? '').toString().trim().toUpperCase();
+        const escaparHtml = (valor) => (valor ?? '').toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
         function aplicarMaiusculasEmCampo(campo) {
             if (!campo) return;
             const atualizarValor = () => {
@@ -3805,6 +3817,33 @@
             if (elementos.logsBtnLimpar) {
                 elementos.logsBtnLimpar.addEventListener('click', limparFiltrosLogs);
             }
+            const aplicarFiltrosRegistrosImagensDebounced = debounce(aplicarFiltrosRegistrosImagens, 150);
+            if (elementos.registrosImagensDataInicio) {
+                elementos.registrosImagensDataInicio.addEventListener('change', aplicarFiltrosRegistrosImagensDebounced);
+            }
+            if (elementos.registrosImagensDataFim) {
+                elementos.registrosImagensDataFim.addEventListener('change', aplicarFiltrosRegistrosImagensDebounced);
+            }
+            if (elementos.registrosImagensBusca) {
+                elementos.registrosImagensBusca.addEventListener('input', aplicarFiltrosRegistrosImagensDebounced);
+            }
+            if (elementos.registrosImagensBtnLimpar) {
+                elementos.registrosImagensBtnLimpar.addEventListener('click', limparFiltrosRegistrosImagens);
+            }
+            if (elementos.tabelaRegistrosImagensBody) {
+                elementos.tabelaRegistrosImagensBody.addEventListener('click', evento => {
+                    const botao = evento.target.closest('[data-action="ver-registro-imagem"]');
+                    if (!botao) return;
+                    evento.preventDefault();
+                    const url = botao.dataset.url || '';
+                    const titulo = botao.dataset.titulo || 'Registro';
+                    if (!url) {
+                        mostrarErro('Imagem não disponível para visualização.');
+                        return;
+                    }
+                    abrirImagemEmModal(url, titulo);
+                });
+            }
             if (elementos.backupExecutarBtn) {
                 elementos.backupExecutarBtn.addEventListener('click', executarBackupSistemaFrontend);
             }
@@ -4969,6 +5008,9 @@
                     case 'logs':
                         await carregarTabelaLogs();
                         break;
+                    case 'registros-imagens':
+                        await carregarRegistrosImagensSistema();
+                        break;
                 }
             } catch (error) {
                 console.error('Erro ao carregar dados da tabela:', error);
@@ -5962,6 +6004,12 @@
             if (elementos.logsBusca) elementos.logsBusca.value = '';
             aplicarFiltrosLogs();
         }
+        function limparFiltrosRegistrosImagens() {
+            if (elementos.registrosImagensDataInicio) elementos.registrosImagensDataInicio.value = '';
+            if (elementos.registrosImagensDataFim) elementos.registrosImagensDataFim.value = '';
+            if (elementos.registrosImagensBusca) elementos.registrosImagensBusca.value = '';
+            aplicarFiltrosRegistrosImagens();
+        }
         function limparFiltrosHistoricoVisitantes() {
             if (elementos.historicoVisitantesDataInicio) elementos.historicoVisitantesDataInicio.value = '';
             if (elementos.historicoVisitantesDataFim) elementos.historicoVisitantesDataFim.value = '';
@@ -6217,6 +6265,87 @@
                 `;
                 tbody.appendChild(tr);
             });
+        }
+        function aplicarFiltrosRegistrosImagens() {
+            const tbody = elementos.tabelaRegistrosImagensBody;
+            if (!tbody) return;
+            const registros = Array.isArray(estado.registrosImagens) ? estado.registrosImagens : [];
+            const dataInicioValor = elementos.registrosImagensDataInicio?.value || '';
+            const dataFimValor = elementos.registrosImagensDataFim?.value || '';
+            const busca = normalizarTextoBusca(elementos.registrosImagensBusca?.value || '');
+
+            const dataInicio = dataInicioValor ? new Date(`${dataInicioValor}T00:00:00`) : null;
+            const dataFim = dataFimValor ? new Date(`${dataFimValor}T23:59:59`) : null;
+
+            const registrosFiltrados = registros.filter(registro => {
+                const dataRegistro = registro.dataHoraOriginal ? new Date(registro.dataHoraOriginal) : null;
+                if (dataInicio && (!dataRegistro || dataRegistro < dataInicio)) return false;
+                if (dataFim && (!dataRegistro || dataRegistro > dataFim)) return false;
+                if (busca) {
+                    const alvo = normalizarTextoBusca(`${registro.numeroArmario} ${registro.contexto} ${registro.titulo} ${registro.detalhe} ${registro.responsavel}`);
+                    if (!alvo.includes(busca)) return false;
+                }
+                return true;
+            });
+
+            tbody.innerHTML = '';
+            if (!registrosFiltrados.length) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td class="table-empty" colspan="7">Nenhum registro de imagem encontrado com os filtros selecionados.</td>';
+                tbody.appendChild(tr);
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            registrosFiltrados.forEach(registro => {
+                const dataHora = escaparHtml(registro.dataHora || '-');
+                const numeroArmario = escaparHtml(registro.numeroArmario || '-');
+                const contexto = escaparHtml(registro.contexto || '-');
+                const titulo = escaparHtml(registro.titulo || '-');
+                const detalhe = escaparHtml(registro.detalhe || '-');
+                const responsavel = escaparHtml(registro.responsavel || '-');
+                const url = escaparHtml(registro.url || '');
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${dataHora}</td>
+                    <td>${numeroArmario}</td>
+                    <td>${contexto}</td>
+                    <td>${titulo}</td>
+                    <td>${detalhe}</td>
+                    <td>${responsavel}</td>
+                    <td><button class="btn btn-ghost" type="button" data-action="ver-registro-imagem" data-url="${url}" data-titulo="${titulo}">Ver registro</button></td>
+                `;
+                fragment.appendChild(tr);
+            });
+            tbody.appendChild(fragment);
+        }
+        async function carregarRegistrosImagensSistema() {
+            const tbody = elementos.tabelaRegistrosImagensBody;
+            if (!tbody) return;
+            tbody.innerHTML = '<tr><td class="table-loading" colspan="7">Carregando registros de imagens...</td></tr>';
+            try {
+                const resposta = await callGoogleScript('getRegistrosImagens', {});
+                if (!resposta || !resposta.success || !Array.isArray(resposta.data)) {
+                    tbody.innerHTML = '<tr><td class="table-empty" colspan="7">Nenhum registro em imagem disponível.</td></tr>';
+                    estado.registrosImagens = [];
+                    return;
+                }
+                estado.registrosImagens = resposta.data.map(item => ({
+                    dataHora: item.dataHora ? formatarDataHora(item.dataHora) : '-',
+                    dataHoraOriginal: item.dataHora || '',
+                    numeroArmario: item.numeroArmario || '',
+                    contexto: item.contexto || '',
+                    titulo: item.titulo || '',
+                    detalhe: item.detalhe || '',
+                    responsavel: item.responsavel || '',
+                    url: item.fotoUrl || ''
+                })).filter(item => item.url);
+                aplicarFiltrosRegistrosImagens();
+            } catch (erro) {
+                console.error('Erro ao carregar registros de imagens do sistema:', erro);
+                tbody.innerHTML = '<tr><td class="table-error" colspan="7">Não foi possível carregar os registros de imagens.</td></tr>';
+                estado.registrosImagens = [];
+            }
         }
         function atualizarSeletoresUnidade() {
             if (!elementos.unitSelect) return;
@@ -9763,6 +9892,19 @@
             };
             return mapa[tipo] || tipo;
         }
+        async function abrirImagemEmModal(url, titulo = 'Registro em imagem') {
+            const urlImagem = (url || '').toString().trim();
+            if (!urlImagem) return;
+            const tituloSeguro = escaparHtml(titulo);
+            const urlSeguro = escaparHtml(urlImagem);
+            await Swal.fire({
+                title: titulo,
+                html: `<div class="registro-imagem-preview"><img src="${urlSeguro}" alt="${tituloSeguro}" loading="lazy" decoding="async"></div>`,
+                width: 980,
+                confirmButtonText: 'Fechar',
+                focusConfirm: false
+            });
+        }
         async function abrirGaleriaImagensArmario(id) {
             const armario = obterArmarioPorId(id) || estado.armarios.find(item => normalizarIdentificador(item.idPlanilha) === normalizarIdentificador(id));
             if (!armario) {
@@ -9850,7 +9992,7 @@
                                     ${item.dataHora ? `<span><i class="fas fa-clock"></i> ${item.dataHora}</span>` : ''}
                                     ${item.responsavel ? `<span><i class="fas fa-user"></i> ${item.responsavel}</span>` : ''}
                                 </div>
-                                <a class="registro-imagem-link" href="${item.url}" target="_blank" rel="noopener">Abrir original</a>
+                                <button class="registro-imagem-link" type="button" data-action="ver-registro-imagem" data-url="${escaparHtml(item.url)}" data-titulo="${escaparHtml(item.titulo || 'Registro')}">Ver registro</button>
                             </div>
                         </article>
                     `).join('')}</div>`
@@ -9861,7 +10003,16 @@
                 html: `<div class="modal-registro-imagens">${resumo}${conteudoImagens}</div>`,
                 width: 960,
                 confirmButtonText: 'Fechar',
-                focusConfirm: false
+                focusConfirm: false,
+                didOpen: () => {
+                    const container = Swal.getHtmlContainer();
+                    container?.addEventListener('click', evento => {
+                        const botao = evento.target.closest('[data-action="ver-registro-imagem"]');
+                        if (!botao) return;
+                        evento.preventDefault();
+                        abrirImagemEmModal(botao.dataset.url || '', botao.dataset.titulo || 'Registro em imagem');
+                    });
+                }
             });
         }
         function aplicarMascaraLeito(valor) {
