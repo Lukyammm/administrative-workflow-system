@@ -3352,7 +3352,24 @@ function liberarArmario(id, tipo, numero, usuarioResponsavel) {
     }
 
     var nomeColuna = sheetName === 'Visitantes' ? CABECALHOS_NOME_VISITANTE : CABECALHOS_NOME_ACOMPANHANTE;
-    definirValorLinha(novaLinha, estrutura, 'status', 'livre');
+    var definirCampoComFallback = function(chave, valor, indiceFallback) {
+      definirValorLinha(novaLinha, estrutura, chave, valor);
+      var indiceExiste = obterIndiceColuna(estrutura, chave, null);
+      var indiceDestino = indiceExiste;
+      if ((indiceDestino === null || indiceDestino === undefined) &&
+          indiceFallback !== null && indiceFallback !== undefined &&
+          indiceFallback >= 0) {
+        indiceDestino = indiceFallback;
+      }
+      if (indiceDestino !== null && indiceDestino !== undefined && indiceDestino >= 0) {
+        while (novaLinha.length <= indiceDestino) {
+          novaLinha.push('');
+        }
+        novaLinha[indiceDestino] = valor;
+      }
+    };
+
+    definirCampoComFallback('status', 'livre', statusIndex);
     definirValorLinha(novaLinha, estrutura, nomeColuna, '');
     definirValorLinha(novaLinha, estrutura, 'nome paciente', '');
     definirValorLinha(novaLinha, estrutura, 'leito', '');
