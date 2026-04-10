@@ -1405,6 +1405,32 @@
             </div>
         </div>
     </div>
+    <div class="modal modal-full modal-image-viewer" id="image-viewer-modal" aria-hidden="true" role="dialog" aria-labelledby="image-viewer-title">
+        <div class="modal-content modal-full-content image-viewer-content">
+            <div class="modal-header image-viewer-header">
+                <div class="modal-title" id="image-viewer-title">Visualizar imagem</div>
+                <button class="modal-close" id="image-viewer-close" type="button" aria-label="Fechar visualização">&times;</button>
+            </div>
+            <div class="modal-body modal-scrollable image-viewer-body">
+                <button type="button" class="image-viewer-nav prev" id="image-viewer-prev" aria-label="Imagem anterior">
+                    <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                <div class="image-viewer-stage">
+                    <img id="image-viewer-image" alt="Imagem selecionada" loading="lazy">
+                </div>
+                <button type="button" class="image-viewer-nav next" id="image-viewer-next" aria-label="Próxima imagem">
+                    <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="modal-actions image-viewer-footer">
+                <div class="image-viewer-meta">
+                    <strong id="image-viewer-summary-title">-</strong>
+                    <span id="image-viewer-summary-text">-</span>
+                </div>
+                <div class="image-viewer-counter" id="image-viewer-counter">1 / 1</div>
+            </div>
+        </div>
+    </div>
     <!-- Painel de Notificações -->
     <div class="notification-panel" id="notification-panel" aria-hidden="true">
         <div class="notification-header">

@@ -83,6 +83,8 @@
             return estado.liberacao;
         }
         let estadoPdfTemporario = { fileId: '', url: '', embedUrl: '', timeoutId: null };
+        const galeriasImagem = {};
+        const estadoVisualizadorImagem = { grupo: '', indice: 0 };
         const STORAGE_KEYS = {
             sessaoUsuario: 'locknac_sessao_usuario',
             rascunhoArmario: 'locknac_rascunho_armario',
@@ -816,6 +818,14 @@
             pdfViewerCancel: document.getElementById('pdf-viewer-cancel'),
             pdfViewerPrint: document.getElementById('pdf-viewer-print'),
             pdfViewerEmpty: document.getElementById('pdf-viewer-empty'),
+            imageViewerModal: document.getElementById('image-viewer-modal'),
+            imageViewerClose: document.getElementById('image-viewer-close'),
+            imageViewerPrev: document.getElementById('image-viewer-prev'),
+            imageViewerNext: document.getElementById('image-viewer-next'),
+            imageViewerImage: document.getElementById('image-viewer-image'),
+            imageViewerSummaryTitle: document.getElementById('image-viewer-summary-title'),
+            imageViewerSummaryText: document.getElementById('image-viewer-summary-text'),
+            imageViewerCounter: document.getElementById('image-viewer-counter'),
             tabelaAchadosBody: document.querySelector('#tabela-achados tbody'),
             achadosBusca: document.getElementById('achados-busca'),
             achadosStatus: document.getElementById('achados-status'),
@@ -3792,6 +3802,30 @@
                     }
                 });
             }
+            if (elementos.imageViewerClose) {
+                elementos.imageViewerClose.addEventListener('click', fecharVisualizadorImagem);
+            }
+            if (elementos.imageViewerPrev) {
+                elementos.imageViewerPrev.addEventListener('click', () => alternarImagemVisualizador(-1));
+            }
+            if (elementos.imageViewerNext) {
+                elementos.imageViewerNext.addEventListener('click', () => alternarImagemVisualizador(1));
+            }
+            if (elementos.imageViewerModal) {
+                elementos.imageViewerModal.addEventListener('click', evento => {
+                    if (evento.target === elementos.imageViewerModal) {
+                        fecharVisualizadorImagem();
+                    }
+                });
+            }
+            document.addEventListener('click', evento => {
+                const trigger = evento.target.closest('[data-imagem-modal="true"]');
+                if (!trigger) return;
+                const grupo = trigger.dataset.imageGroup || '';
+                if (!grupo) return;
+                evento.preventDefault();
+                abrirVisualizadorImagem(grupo, Number(trigger.dataset.imageIndex || 0));
+            });
             const aplicarFiltrosLogsDebounced = debounce(aplicarFiltrosLogs, 150);
             if (elementos.logsDataInicio) {
                 elementos.logsDataInicio.addEventListener('change', aplicarFiltrosLogsDebounced);
@@ -3969,6 +4003,19 @@
                     }
                     if (painelNotificacoesAberto()) {
                         atualizarPainelNotificacoes(false);
+                    }
+                    if (elementos.imageViewerModal?.style.display === 'flex') {
+                        fecharVisualizadorImagem();
+                    }
+                    return;
+                }
+                if (elementos.imageViewerModal?.style.display === 'flex') {
+                    if (event.key === 'ArrowRight') {
+                        event.preventDefault();
+                        alternarImagemVisualizador(1);
+                    } else if (event.key === 'ArrowLeft') {
+                        event.preventDefault();
+                        alternarImagemVisualizador(-1);
                     }
                 }
             });
@@ -6078,6 +6125,8 @@
                 return;
             }
             elementos.tabelaRegistrosImagensBody.innerHTML = '';
+            const grupoGaleriaTabela = 'tabela-registros-imagens';
+            registrarGaleriaImagem(grupoGaleriaTabela, []);
             registros.forEach(item => {
                 const tr = document.createElement('tr');
                 const dataHora = item.dataHora ? formatarDataHora(item.dataHora) : '-';
@@ -6086,13 +6135,24 @@
                 const titulo = item.titulo || '-';
                 const responsavel = item.responsavel || '-';
                 const fotoUrl = item.fotoUrl || '';
+                const indiceImagem = (galeriasImagem[grupoGaleriaTabela] || []).length;
+                if (fotoUrl) {
+                    galeriasImagem[grupoGaleriaTabela].push({
+                        url: fotoUrl,
+                        titulo: item.titulo || 'Registro em imagem',
+                        contexto: item.contexto || '',
+                        detalhe: armario !== '-' ? `Armário ${armario}` : '',
+                        dataHora: dataHora !== '-' ? dataHora : '',
+                        responsavel: responsavel !== '-' ? responsavel : ''
+                    });
+                }
                 tr.innerHTML = `
                     <td>${dataHora}</td>
                     <td>${armario}</td>
                     <td>${contexto}</td>
                     <td>${titulo}</td>
                     <td>${responsavel}</td>
-                    <td>${fotoUrl ? `<a href="${fotoUrl}" target="_blank" rel="noopener">Abrir</a>` : '-'}</td>
+                    <td>${fotoUrl ? `<button type="button" class="registro-imagem-link" data-imagem-modal="true" data-image-group="${grupoGaleriaTabela}" data-image-index="${indiceImagem}">Abrir</button>` : '-'}</td>
                 `;
                 elementos.tabelaRegistrosImagensBody.appendChild(tr);
             });
@@ -6575,13 +6635,24 @@
             const termoStatusTexto = formatarStatusTermo(armario.termoStatus);
             const termoPendente = termoStatusNormalizado === 'pendente';
             const termoEmAndamento = termoStatusNormalizado === 'em andamento';
+            const grupoContingencia = `contingencia-${normalizarIdentificador(armario.idPlanilha || armario.id || armario.numero)}`;
+            if (armario.fotoContingenciaUrl) {
+                registrarGaleriaImagem(grupoContingencia, [{
+                    url: armario.fotoContingenciaUrl,
+                    titulo: `Contingência do armário ${armario.numero || '-'}`,
+                    contexto: 'Foto da contingência',
+                    detalhe: armario.nomePaciente || '',
+                    dataHora: formatarDataComDiaSemana(armario.dataRegistro),
+                    responsavel: armario.nomeVisitante || ''
+                }]);
+            }
             const fotoContingenciaHtml = armario.fotoContingenciaUrl
                 ? `<div class="armario-foto">
                         <strong>Foto da contingência:</strong>
                         <div class="armario-foto-thumb">
-                            <a href="${armario.fotoContingenciaUrl}" target="_blank" rel="noopener noreferrer">
+                            <button type="button" class="foto-contingencia-btn" data-imagem-modal="true" data-image-group="${grupoContingencia}" data-image-index="0">
                                 <img src="${armario.fotoContingenciaUrl}" alt="Foto registrada da contingência" loading="lazy">
-                            </a>
+                            </button>
                         </div>
                     </div>`
                 : '';
@@ -9828,6 +9899,64 @@
             };
             return mapa[tipo] || tipo;
         }
+        function registrarGaleriaImagem(grupo, itens = []) {
+            if (!grupo) return;
+            galeriasImagem[grupo] = Array.isArray(itens) ? itens.filter(item => item && item.url) : [];
+        }
+        function obterItemGaleriaImagem(grupo, indice) {
+            const itens = galeriasImagem[grupo];
+            if (!Array.isArray(itens) || !itens.length) return null;
+            const indiceSeguro = Math.min(Math.max(Number(indice) || 0, 0), itens.length - 1);
+            return { item: itens[indiceSeguro], indice: indiceSeguro, total: itens.length };
+        }
+        function montarResumoSutilImagem(item) {
+            return [item?.contexto, item?.detalhe, item?.dataHora, item?.responsavel].filter(Boolean).join(' • ') || 'Sem informações adicionais.';
+        }
+        function renderizarVisualizadorImagem() {
+            const dados = obterItemGaleriaImagem(estadoVisualizadorImagem.grupo, estadoVisualizadorImagem.indice);
+            if (!dados || !elementos.imageViewerImage) return;
+            estadoVisualizadorImagem.indice = dados.indice;
+            elementos.imageViewerImage.src = dados.item.url;
+            elementos.imageViewerImage.alt = dados.item.titulo || 'Imagem do registro';
+            if (elementos.imageViewerSummaryTitle) elementos.imageViewerSummaryTitle.textContent = dados.item.titulo || 'Imagem';
+            if (elementos.imageViewerSummaryText) elementos.imageViewerSummaryText.textContent = montarResumoSutilImagem(dados.item);
+            if (elementos.imageViewerCounter) elementos.imageViewerCounter.textContent = `${dados.indice + 1} / ${dados.total}`;
+            const habilitarNavegacao = dados.total > 1;
+            if (elementos.imageViewerPrev) elementos.imageViewerPrev.disabled = !habilitarNavegacao;
+            if (elementos.imageViewerNext) elementos.imageViewerNext.disabled = !habilitarNavegacao;
+        }
+        function alternarImagemVisualizador(direcao = 1) {
+            const dados = obterItemGaleriaImagem(estadoVisualizadorImagem.grupo, estadoVisualizadorImagem.indice);
+            if (!dados || dados.total <= 1) return;
+            estadoVisualizadorImagem.indice = (dados.indice + direcao + dados.total) % dados.total;
+            renderizarVisualizadorImagem();
+        }
+        function abrirVisualizadorImagem(grupo, indice = 0) {
+            const dados = obterItemGaleriaImagem(grupo, indice);
+            if (!dados || !elementos.imageViewerModal) {
+                mostrarErro('Imagem não encontrada para visualização.');
+                return;
+            }
+            estadoVisualizadorImagem.grupo = grupo;
+            estadoVisualizadorImagem.indice = dados.indice;
+            renderizarVisualizadorImagem();
+            if (elementos.imageViewerModal.style.display !== 'flex') {
+                travaRolagem.aplicar();
+            }
+            elementos.imageViewerModal.style.display = 'flex';
+            elementos.imageViewerModal.setAttribute('aria-hidden', 'false');
+        }
+        function fecharVisualizadorImagem() {
+            if (!elementos.imageViewerModal) return;
+            if (elementos.imageViewerModal.style.display === 'flex') {
+                travaRolagem.remover();
+            }
+            elementos.imageViewerModal.style.display = 'none';
+            elementos.imageViewerModal.setAttribute('aria-hidden', 'true');
+            if (elementos.imageViewerImage) elementos.imageViewerImage.src = '';
+            estadoVisualizadorImagem.grupo = '';
+            estadoVisualizadorImagem.indice = 0;
+        }
         async function abrirGaleriaImagensArmario(id) {
             const armario = obterArmarioPorId(id) || estado.armarios.find(item => normalizarIdentificador(item.idPlanilha) === normalizarIdentificador(id));
             if (!armario) {
@@ -9903,9 +10032,11 @@
                 return;
             }
 
+            const grupoGaleria = `armario-${normalizarIdentificador(armario.idPlanilha || armario.id || armario.numero)}-${Date.now()}`;
+            registrarGaleriaImagem(grupoGaleria, imagens);
             const resumo = `<div class="registro-imagens-resumo"><span>Armário <strong>${armario.numero || '-'}</strong></span><span>${imagens.length} registro(s)</span></div>`;
             const conteudoImagens = imagens.length
-                ? `<div class="registro-imagens-grid">${imagens.map(item => `
+                ? `<div class="registro-imagens-grid">${imagens.map((item, indice) => `
                         <article class="registro-imagem-card">
                             <div class="registro-imagem-info">
                                 <p class="registro-imagem-contexto">${item.contexto || ''}</p>
@@ -9915,7 +10046,7 @@
                                     ${item.dataHora ? `<span><i class="fas fa-clock"></i> ${item.dataHora}</span>` : ''}
                                     ${item.responsavel ? `<span><i class="fas fa-user"></i> ${item.responsavel}</span>` : ''}
                                 </div>
-                                <a class="registro-imagem-link" href="${item.url}" target="_blank" rel="noopener">Abrir original</a>
+                                <button type="button" class="registro-imagem-link" data-imagem-modal="true" data-image-group="${grupoGaleria}" data-image-index="${indice}">Abrir imagem</button>
                             </div>
                         </article>
                     `).join('')}</div>`
