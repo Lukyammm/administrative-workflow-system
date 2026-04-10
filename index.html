@@ -64,6 +64,7 @@
                     <li><a href="#" data-page="cadastro-unidades"><i class="fas fa-hospital"></i> <span>Cadastro de Unidades</span></a></li>
                     <li><a href="#" data-page="usuarios"><i class="fas fa-users"></i> <span>Usuários</span></a></li>
                     <li><a href="#" data-page="logs"><i class="fas fa-clipboard-list"></i> <span>LOGS</span></a></li>
+                    <li><a href="#" data-page="backup"><i class="fas fa-box-archive"></i> <span>Backup</span></a></li>
                 </ul>
             </nav>
             <div class="sidebar-footer">
@@ -738,6 +739,20 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+            <div class="page" id="backup">
+                <div class="data-table">
+                    <div class="table-header">
+                        <div>
+                            <h3>Backup do Sistema</h3>
+                            <p class="table-subtitle">Move os dados para planilhas de backup por mês/ano (primeiro copia, depois limpa).</p>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="backup-executar">
+                            <i class="fas fa-box-archive"></i> Executar backup agora
+                        </button>
+                    </div>
+                    <div id="backup-resultado" class="table-subtitle">Nenhum backup executado nesta sessão.</div>
                 </div>
             </div>
         </div>

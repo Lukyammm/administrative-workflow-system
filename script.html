@@ -768,6 +768,8 @@
             logsFiltroUsuario: document.getElementById('logs-filtro-usuario'),
             logsBusca: document.getElementById('logs-busca'),
             logsBtnLimpar: document.getElementById('logs-btn-limpar'),
+            backupExecutarBtn: document.getElementById('backup-executar'),
+            backupResultado: document.getElementById('backup-resultado'),
             tabelaHistoricoVisitantesBody: document.querySelector('#tabela-historico-visitantes tbody'),
             historicoVisitantesDataInicio: document.getElementById('historico-visitantes-data-inicio'),
             historicoVisitantesDataFim: document.getElementById('historico-visitantes-data-fim'),
@@ -1248,7 +1250,7 @@
         atualizarPainelNotificacoes(false);
         const customSelectorInstances = new WeakMap();
         const customSelectorStore = new Set();
-        const paginasRestritasUsuario = new Set(['cadastro-armarios', 'cadastro-unidades', 'usuarios', 'logs']);
+        const paginasRestritasUsuario = new Set(['cadastro-armarios', 'cadastro-unidades', 'usuarios', 'logs', 'backup']);
         let aplicacaoInicializada = false;
         let loginInicializado = false;
         let eventosInicializados = false;
@@ -3803,6 +3805,9 @@
             if (elementos.logsBtnLimpar) {
                 elementos.logsBtnLimpar.addEventListener('click', limparFiltrosLogs);
             }
+            if (elementos.backupExecutarBtn) {
+                elementos.backupExecutarBtn.addEventListener('click', executarBackupSistemaFrontend);
+            }
             const aplicarFiltrosHistoricoVisitantesDebounced = debounce(aplicarFiltrosHistoricoVisitantes, 150);
             if (elementos.historicoVisitantesDataInicio) {
                 elementos.historicoVisitantesDataInicio.addEventListener('change', aplicarFiltrosHistoricoVisitantesDebounced);
@@ -6029,6 +6034,59 @@
             }
             estado.logs = Array.isArray(resultado.data) ? resultado.data : [];
             aplicarFiltrosLogs();
+        }
+        async function executarBackupSistemaFrontend() {
+            if (!perfilAtualEhAdmin()) {
+                mostrarErro('Ação disponível apenas para administradores.');
+                return;
+            }
+
+            const confirmacao = await Swal.fire({
+                title: 'Executar backup agora?',
+                text: 'O sistema vai copiar para backup e só depois limpar as abas principais.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Executar backup',
+                cancelButtonText: 'Cancelar'
+            });
+
+            if (!confirmacao.isConfirmed) {
+                return;
+            }
+
+            try {
+                if (elementos.backupExecutarBtn) {
+                    elementos.backupExecutarBtn.disabled = true;
+                }
+                if (elementos.backupResultado) {
+                    elementos.backupResultado.textContent = 'Executando backup...';
+                }
+
+                const resultado = await callGoogleScript('executarBackupSistema');
+                if (!resultado.success) {
+                    throw new Error(resultado.error || 'Não foi possível executar o backup.');
+                }
+
+                const total = Number(resultado.totalRegistrosMovidos) || 0;
+                const detalhes = Array.isArray(resultado.relatorio)
+                    ? resultado.relatorio.map(item => `${item.aba}: ${item.movidos || 0}`).join(' | ')
+                    : '';
+
+                if (elementos.backupResultado) {
+                    elementos.backupResultado.textContent = `Backup concluído em ${resultado.timestamp || ''}. Registros movidos: ${total}. ${detalhes}`;
+                }
+                mostrarSucesso(`Backup concluído. Registros movidos: ${total}.`);
+            } catch (erro) {
+                console.error('Erro ao executar backup:', erro);
+                if (elementos.backupResultado) {
+                    elementos.backupResultado.textContent = 'Falha ao executar backup.';
+                }
+                mostrarErro('Não foi possível concluir o backup.');
+            } finally {
+                if (elementos.backupExecutarBtn) {
+                    elementos.backupExecutarBtn.disabled = false;
+                }
+            }
         }
         function aplicarFiltrosHistoricoVisitantes() {
             const tbody = elementos.tabelaHistoricoVisitantesBody;

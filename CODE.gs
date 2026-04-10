@@ -586,6 +586,7 @@ function resolverIdsUnidadesArmazenadas(unidadesValor, mapas) {
 const PASTA_DRIVE_ID = '1nYsGJJUIufxDYVvIanVXCbPx7YuBOYDP';
 const PASTA_DRIVE_TEMP_ID = '11M_fFDA9nrOqzIm6zMnaGjYMCQoE4XXs';
 const PASTA_DRIVE_FOTOS_ID = '1XKZ6LApUh6RjBddeySCbPFdS6ncDS8DB';
+const PASTA_BACKUP_RAIZ_ID = '1ouVHkmVmdJVe6aYVBzBUNYpndk4OKKmu';
 
 // Configuração de cache para leitura dos termos
 const TERMOS_CACHE_KEY = 'termos_registrados_cache_v1';
@@ -1800,6 +1801,10 @@ function handlePost(e) {
       
       case 'excluirPertencePerdido':
         return ContentService.createTextOutput(JSON.stringify(excluirPertencePerdido(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+
+      case 'executarBackupSistema':
+        return ContentService.createTextOutput(JSON.stringify(executarBackupSistema(e.parameter)))
           .setMimeType(ContentService.MimeType.JSON);
 
       default:
@@ -7421,6 +7426,149 @@ function getLogs() {
     return { success: true, data: logs.reverse() }; // Mais recentes primeiro
     
   } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function obterOuCriarSubpastaDrive(pastaPai, nomePasta) {
+  var nomeLimpo = (nomePasta || '').toString().trim();
+  if (!nomeLimpo) {
+    return pastaPai;
+  }
+
+  var pastas = pastaPai.getFoldersByName(nomeLimpo);
+  if (pastas.hasNext()) {
+    return pastas.next();
+  }
+  return pastaPai.createFolder(nomeLimpo);
+}
+
+function obterOuCriarArquivoBackup(pasta, nomeArquivo) {
+  var arquivos = pasta.getFilesByName(nomeArquivo);
+  if (arquivos.hasNext()) {
+    return SpreadsheetApp.open(arquivos.next());
+  }
+
+  var arquivo = SpreadsheetApp.create(nomeArquivo);
+  var fileDrive = DriveApp.getFileById(arquivo.getId());
+  pasta.addFile(fileDrive);
+  try {
+    DriveApp.getRootFolder().removeFile(fileDrive);
+  } catch (erroRemocao) {
+    console.log('Arquivo de backup mantido no Meu Drive por permissão: ' + erroRemocao);
+  }
+
+  return arquivo;
+}
+
+function obterOuCriarAbaDestino(planilha, nomeAba, cabecalhos) {
+  var aba = planilha.getSheetByName(nomeAba);
+  if (!aba) {
+    aba = planilha.insertSheet(nomeAba);
+  }
+
+  if (aba.getLastRow() === 0 && cabecalhos && cabecalhos.length) {
+    aba.getRange(1, 1, 1, cabecalhos.length).setValues([cabecalhos]);
+  }
+
+  return aba;
+}
+
+function copiarDepoisLimparAba(abaOrigem, abaDestino) {
+  if (!abaOrigem || !abaDestino) {
+    return 0;
+  }
+
+  var ultimaLinha = abaOrigem.getLastRow();
+  var ultimaColuna = abaOrigem.getLastColumn();
+  if (ultimaLinha < 2 || ultimaColuna < 1) {
+    return 0;
+  }
+
+  var quantidade = ultimaLinha - 1;
+  var dados = abaOrigem.getRange(2, 1, quantidade, ultimaColuna).getValues();
+  if (!dados.length) {
+    return 0;
+  }
+
+  var destinoLinha = Math.max(abaDestino.getLastRow(), 1) + 1;
+  abaDestino.getRange(destinoLinha, 1, dados.length, ultimaColuna).setValues(dados);
+  abaOrigem.deleteRows(2, quantidade);
+
+  return dados.length;
+}
+
+function executarBackupSistema() {
+  try {
+    var permissao = validarPermissaoAdmin({ usuarioId: usuarioContextoRequisicaoId });
+    if (!permissao.ok) {
+      return { success: false, error: permissao.error };
+    }
+
+    var raiz = DriveApp.getFolderById(PASTA_BACKUP_RAIZ_ID);
+    var agora = new Date();
+    var timezone = Session.getScriptTimeZone() || 'America/Fortaleza';
+    var ano = Utilities.formatDate(agora, timezone, 'yyyy');
+    var mesNumero = Utilities.formatDate(agora, timezone, 'MM');
+    var mesAno = Utilities.formatDate(agora, timezone, 'yyyy-MM');
+    var timestamp = Utilities.formatDate(agora, timezone, "yyyy-MM-dd'T'HH:mm:ss");
+
+    var pastaAno = obterOuCriarSubpastaDrive(raiz, ano);
+    var pastaMesGeral = obterOuCriarSubpastaDrive(pastaAno, mesNumero + '-' + mesAno);
+    var pastaLogs = obterOuCriarSubpastaDrive(raiz, 'LOGS');
+    var pastaTermos = obterOuCriarSubpastaDrive(raiz, 'TERMOS');
+    var pastaLogsAno = obterOuCriarSubpastaDrive(pastaLogs, ano);
+    var pastaLogsMes = obterOuCriarSubpastaDrive(pastaLogsAno, mesNumero + '-' + mesAno);
+    var pastaTermosAno = obterOuCriarSubpastaDrive(pastaTermos, ano);
+    var pastaTermosMes = obterOuCriarSubpastaDrive(pastaTermosAno, mesNumero + '-' + mesAno);
+
+    var arquivoBackupGeral = obterOuCriarArquivoBackup(pastaMesGeral, 'BACKUP-GERAL-' + mesAno);
+    var arquivoBackupLogs = obterOuCriarArquivoBackup(pastaLogsMes, 'BACKUP-LOGS-' + mesAno);
+    var arquivoBackupTermos = obterOuCriarArquivoBackup(pastaTermosMes, 'BACKUP-TERMOS-' + mesAno);
+
+    var ssPrincipal = SpreadsheetApp.getActiveSpreadsheet();
+    var relatorio = [];
+    var totalRegistros = 0;
+
+    var mapeamento = [
+      { origem: 'Histórico Visitantes', arquivo: arquivoBackupGeral },
+      { origem: 'Histórico Acompanhantes', arquivo: arquivoBackupGeral },
+      { origem: 'Registro de Imagens', arquivo: arquivoBackupGeral },
+      { origem: 'LOGS', arquivo: arquivoBackupLogs },
+      { origem: 'Termos de Responsabilidade', arquivo: arquivoBackupTermos }
+    ];
+
+    mapeamento.forEach(function(item) {
+      var abaOrigem = ssPrincipal.getSheetByName(item.origem);
+      if (!abaOrigem) {
+        relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba não encontrada.' });
+        return;
+      }
+
+      var ultimaColuna = abaOrigem.getLastColumn();
+      if (ultimaColuna < 1) {
+        relatorio.push({ aba: item.origem, movidos: 0, observacao: 'Aba sem colunas.' });
+        return;
+      }
+
+      var cabecalhos = abaOrigem.getRange(1, 1, 1, ultimaColuna).getValues()[0];
+      var abaDestino = obterOuCriarAbaDestino(item.arquivo, item.origem, cabecalhos);
+      var movidos = copiarDepoisLimparAba(abaOrigem, abaDestino);
+      totalRegistros += movidos;
+      relatorio.push({ aba: item.origem, movidos: movidos });
+    });
+
+    registrarLog('BACKUP_EXECUTADO', 'Backup executado em ' + timestamp + '. Registros movidos: ' + totalRegistros);
+    invalidarCachesArmariosRelacionados();
+
+    return {
+      success: true,
+      totalRegistrosMovidos: totalRegistros,
+      timestamp: timestamp,
+      relatorio: relatorio
+    };
+  } catch (error) {
+    registrarLog('BACKUP_ERRO', error.toString());
     return { success: false, error: error.toString() };
   }
 }
