@@ -3947,6 +3947,14 @@ function getHistorico(tipo) {
       var totalLinhasDados = sheet.getLastRow() - 1;
       var totalColunasDados = Math.max(sheet.getLastColumn(), 15);
       var data = sheet.getRange(2, 1, totalLinhasDados, totalColunasDados).getValues();
+      var dadosBackup = obterLinhasSheetAtualEBackups(sheetName, {
+        tipoArquivo: 'geral',
+        incluirPlanilhaAtual: false,
+        colunasMinimas: 15
+      });
+      if (dadosBackup.length) {
+        data = data.concat(dadosBackup);
+      }
       var historico = [];
 
       data.forEach(function(row) {
@@ -3984,13 +3992,30 @@ function montarHistoricoTermosResponsabilidade() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('Termos de Responsabilidade');
 
-  if (!sheet || sheet.getLastRow() < 2) {
+  if (!sheet && !existeArquivoBackupDisponivel('termos')) {
     return { success: true, data: [] };
   }
 
-  var totalLinhasDados = sheet.getLastRow() - 1;
-  var totalColunasDados = Math.max(sheet.getLastColumn(), 21);
-  var data = sheet.getRange(2, 1, totalLinhasDados, totalColunasDados).getValues();
+  var data = [];
+  if (sheet && sheet.getLastRow() >= 2) {
+    var totalLinhasDados = sheet.getLastRow() - 1;
+    var totalColunasDados = Math.max(sheet.getLastColumn(), 21);
+    data = sheet.getRange(2, 1, totalLinhasDados, totalColunasDados).getValues();
+  }
+
+  var dadosBackup = obterLinhasSheetAtualEBackups('Termos de Responsabilidade', {
+    tipoArquivo: 'termos',
+    incluirPlanilhaAtual: false,
+    colunasMinimas: 21
+  });
+  if (dadosBackup.length) {
+    data = data.concat(dadosBackup);
+  }
+
+  if (!data.length) {
+    return { success: true, data: [] };
+  }
+
   var historico = [];
 
   data.forEach(function(row) {
@@ -6429,12 +6454,24 @@ function getRegistrosImagens(dados) {
     var numeroFiltro = normalizarNumeroArmario(dados && dados.numeroArmario ? dados.numeroArmario : '');
     var armarioIdTexto = dados && dados.armarioId !== null && dados.armarioId !== undefined ? dados.armarioId.toString().trim() : '';
 
+    var valoresConsolidados = [];
     if (sheet && sheet.getLastRow() >= 2) {
       var estrutura = garantirEstruturaRegistroImagens(sheet);
       var totalLinhas = sheet.getLastRow() - 1;
-      var valores = sheet.getRange(2, 1, totalLinhas, estrutura.totalColunas).getValues();
+      var valoresAtuais = sheet.getRange(2, 1, totalLinhas, estrutura.totalColunas).getValues();
+      valoresConsolidados = valoresConsolidados.concat(valoresAtuais);
+    }
+    var valoresBackup = obterLinhasSheetAtualEBackups('Registro de Imagens', {
+      tipoArquivo: 'geral',
+      incluirPlanilhaAtual: false,
+      colunasMinimas: 11
+    });
+    if (valoresBackup.length) {
+      valoresConsolidados = valoresConsolidados.concat(valoresBackup);
+    }
 
-      valores.forEach(function(linha) {
+    if (valoresConsolidados.length) {
+      valoresConsolidados.forEach(function(linha) {
         var numeroLinha = normalizarNumeroArmario(linha[2]);
         if (armarioIdTexto && String(linha[1]).trim() !== armarioIdTexto) {
           return;
@@ -6445,7 +6482,7 @@ function getRegistrosImagens(dados) {
 
         possuiRegistrosArmario = true;
 
-        var url = linha[estrutura.colunaFotoUrl - 1];
+        var url = linha[8];
         if (!url) {
           return;
         }
@@ -6461,8 +6498,8 @@ function getRegistrosImagens(dados) {
           responsavel: linha[7],
           dataHora: linha[8],
           fotoUrl: url,
-          fotoId: linha[estrutura.colunaFotoId - 1] || '',
-          fotoNome: linha[estrutura.colunaFotoNome - 1] || ''
+          fotoId: linha[9] || '',
+          fotoNome: linha[10] || ''
         });
       });
     }
@@ -6491,6 +6528,105 @@ function getRegistrosImagens(dados) {
     registrarLog('ERRO_IMAGEM', 'Erro ao buscar registros de imagens: ' + erroRegistros.toString());
     return { success: false, error: erroRegistros.toString() };
   }
+}
+
+function existeArquivoBackupDisponivel(tipoArquivo) {
+  return listarArquivosBackup(tipoArquivo).length > 0;
+}
+
+function obterLinhasSheetAtualEBackups(nomeAba, opcoes) {
+  var config = opcoes || {};
+  var tipoArquivo = config.tipoArquivo || 'geral';
+  var incluirPlanilhaAtual = config.incluirPlanilhaAtual !== false;
+  var colunasMinimas = config.colunasMinimas || 1;
+  var linhas = [];
+
+  if (incluirPlanilhaAtual) {
+    try {
+      var ssAtual = SpreadsheetApp.getActiveSpreadsheet();
+      var abaAtual = ssAtual.getSheetByName(nomeAba);
+      if (abaAtual && abaAtual.getLastRow() >= 2) {
+        var colunasAtual = Math.max(abaAtual.getLastColumn(), colunasMinimas);
+        linhas = linhas.concat(abaAtual.getRange(2, 1, abaAtual.getLastRow() - 1, colunasAtual).getValues());
+      }
+    } catch (erroAtual) {
+      registrarLog('AVISO_BACKUP', 'Falha ao ler aba atual "' + nomeAba + '": ' + erroAtual.toString());
+    }
+  }
+
+  var arquivos = listarArquivosBackup(tipoArquivo);
+  arquivos.forEach(function(arquivo) {
+    try {
+      var planilha = SpreadsheetApp.open(arquivo);
+      var aba = planilha.getSheetByName(nomeAba);
+      if (!aba || aba.getLastRow() < 2) {
+        return;
+      }
+      var colunas = Math.max(aba.getLastColumn(), colunasMinimas);
+      var dados = aba.getRange(2, 1, aba.getLastRow() - 1, colunas).getValues();
+      if (dados.length) {
+        linhas = linhas.concat(dados);
+      }
+    } catch (erroArquivo) {
+      registrarLog('AVISO_BACKUP', 'Falha ao ler backup "' + arquivo.getName() + '" (' + nomeAba + '): ' + erroArquivo.toString());
+    }
+  });
+
+  return linhas;
+}
+
+function listarArquivosBackup(tipoArquivo) {
+  var raiz;
+  try {
+    raiz = DriveApp.getFolderById(PASTA_BACKUP_RAIZ_ID);
+  } catch (erroPasta) {
+    registrarLog('AVISO_BACKUP', 'Pasta de backup não acessível: ' + erroPasta.toString());
+    return [];
+  }
+
+  var prefixo = tipoArquivo === 'termos' ? 'BACKUP-TERMOS-' : (tipoArquivo === 'logs' ? 'BACKUP-LOGS-' : 'BACKUP-GERAL-');
+  var arquivos = [];
+
+  if (tipoArquivo === 'termos' || tipoArquivo === 'logs') {
+    var nomePastaTopo = tipoArquivo === 'termos' ? 'TERMOS' : 'LOGS';
+    var pastasTopo = raiz.getFoldersByName(nomePastaTopo);
+    if (!pastasTopo.hasNext()) {
+      return [];
+    }
+    arquivos = coletarArquivosBackupEmPastas(pastasTopo.next(), prefixo);
+  } else {
+    arquivos = coletarArquivosBackupEmPastas(raiz, prefixo);
+  }
+
+  arquivos.sort(function(a, b) {
+    return (a.getName() || '').localeCompare(b.getName() || '');
+  });
+
+  return arquivos;
+}
+
+function coletarArquivosBackupEmPastas(pastaRaiz, prefixo) {
+  var arquivos = [];
+  if (!pastaRaiz) {
+    return arquivos;
+  }
+
+  var arquivosDiretos = pastaRaiz.getFiles();
+  while (arquivosDiretos.hasNext()) {
+    var arquivo = arquivosDiretos.next();
+    var nome = (arquivo.getName() || '').toString();
+    if (nome.indexOf(prefixo) === 0) {
+      arquivos.push(arquivo);
+    }
+  }
+
+  var subpastas = pastaRaiz.getFolders();
+  while (subpastas.hasNext()) {
+    var subpasta = subpastas.next();
+    arquivos = arquivos.concat(coletarArquivosBackupEmPastas(subpasta, prefixo));
+  }
+
+  return arquivos;
 }
 
 function garantirEstruturaHistorico(sheet) {
