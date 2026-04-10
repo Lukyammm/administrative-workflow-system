@@ -763,6 +763,9 @@
             tabelaUsuarios: document.getElementById('tabela-usuarios'),
             tabelaUsuariosBody: document.querySelector('#tabela-usuarios tbody'),
             tabelaLogsBody: document.querySelector('#tabela-logs tbody'),
+            tabelaRegistrosImagensBody: document.querySelector('#tabela-registros-imagens tbody'),
+            registrosImagensResumo: document.getElementById('registros-imagens-resumo'),
+            registrosImagensRefresh: document.getElementById('registros-imagens-refresh'),
             logsDataInicio: document.getElementById('logs-data-inicio'),
             logsDataFim: document.getElementById('logs-data-fim'),
             logsFiltroUsuario: document.getElementById('logs-filtro-usuario'),
@@ -3805,6 +3808,9 @@
             if (elementos.logsBtnLimpar) {
                 elementos.logsBtnLimpar.addEventListener('click', limparFiltrosLogs);
             }
+            if (elementos.registrosImagensRefresh) {
+                elementos.registrosImagensRefresh.addEventListener('click', carregarTabelaRegistrosImagens);
+            }
             if (elementos.backupExecutarBtn) {
                 elementos.backupExecutarBtn.addEventListener('click', executarBackupSistemaFrontend);
             }
@@ -4969,6 +4975,9 @@
                     case 'logs':
                         await carregarTabelaLogs();
                         break;
+                    case 'registros-imagens':
+                        await carregarTabelaRegistrosImagens();
+                        break;
                 }
             } catch (error) {
                 console.error('Erro ao carregar dados da tabela:', error);
@@ -6034,6 +6043,62 @@
             }
             estado.logs = Array.isArray(resultado.data) ? resultado.data : [];
             aplicarFiltrosLogs();
+        }
+        function exibirEstadoTabelaRegistrosImagens(mensagem, tipo = 'empty') {
+            if (!elementos.tabelaRegistrosImagensBody) return;
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 6;
+            td.textContent = mensagem;
+            td.className = tipo === 'loading' ? 'table-loading' : tipo === 'error' ? 'table-error' : 'table-empty';
+            tr.appendChild(td);
+            elementos.tabelaRegistrosImagensBody.innerHTML = '';
+            elementos.tabelaRegistrosImagensBody.appendChild(tr);
+        }
+        async function carregarTabelaRegistrosImagens() {
+            if (!elementos.tabelaRegistrosImagensBody) return;
+            exibirEstadoTabelaRegistrosImagens('Carregando registros em imagens...', 'loading');
+            if (elementos.registrosImagensResumo) {
+                elementos.registrosImagensResumo.textContent = 'Carregando registros...';
+            }
+            const resultado = await callGoogleScript('getRegistrosImagens', {});
+            if (!resultado || !resultado.success) {
+                exibirEstadoTabelaRegistrosImagens('Não foi possível carregar os registros em imagens.', 'error');
+                if (elementos.registrosImagensResumo) {
+                    elementos.registrosImagensResumo.textContent = 'Erro ao carregar os registros.';
+                }
+                return;
+            }
+            const registros = Array.isArray(resultado.data) ? resultado.data : [];
+            if (!registros.length) {
+                exibirEstadoTabelaRegistrosImagens('Nenhum registro em imagem encontrado.');
+                if (elementos.registrosImagensResumo) {
+                    elementos.registrosImagensResumo.textContent = '0 registros encontrados.';
+                }
+                return;
+            }
+            elementos.tabelaRegistrosImagensBody.innerHTML = '';
+            registros.forEach(item => {
+                const tr = document.createElement('tr');
+                const dataHora = item.dataHora ? formatarDataHora(item.dataHora) : '-';
+                const armario = item.numeroArmario || '-';
+                const contexto = item.contexto || '-';
+                const titulo = item.titulo || '-';
+                const responsavel = item.responsavel || '-';
+                const fotoUrl = item.fotoUrl || '';
+                tr.innerHTML = `
+                    <td>${dataHora}</td>
+                    <td>${armario}</td>
+                    <td>${contexto}</td>
+                    <td>${titulo}</td>
+                    <td>${responsavel}</td>
+                    <td>${fotoUrl ? `<a href="${fotoUrl}" target="_blank" rel="noopener">Abrir</a>` : '-'}</td>
+                `;
+                elementos.tabelaRegistrosImagensBody.appendChild(tr);
+            });
+            if (elementos.registrosImagensResumo) {
+                elementos.registrosImagensResumo.textContent = `${registros.length} registro(s) em imagem.`;
+            }
         }
         async function executarBackupSistemaFrontend() {
             if (!perfilAtualEhAdmin()) {

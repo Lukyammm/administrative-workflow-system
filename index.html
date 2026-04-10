@@ -64,6 +64,7 @@
                     <li><a href="#" data-page="cadastro-unidades"><i class="fas fa-hospital"></i> <span>Cadastro de Unidades</span></a></li>
                     <li><a href="#" data-page="usuarios"><i class="fas fa-users"></i> <span>Usuários</span></a></li>
                     <li><a href="#" data-page="logs"><i class="fas fa-clipboard-list"></i> <span>LOGS</span></a></li>
+                    <li><a href="#" data-page="registros-imagens"><i class="fas fa-images"></i> <span>Registros de Imagens</span></a></li>
                     <li><a href="#" data-page="backup"><i class="fas fa-box-archive"></i> <span>Backup</span></a></li>
                 </ul>
             </nav>
@@ -732,6 +733,36 @@
                                     <th>Usuário</th>
                                     <th>Ação</th>
                                     <th>Detalhes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dados serão preenchidos via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="page" id="registros-imagens">
+                <div class="data-table">
+                    <div class="table-header">
+                        <div>
+                            <h3>Registros das Imagens</h3>
+                            <p class="table-subtitle" id="registros-imagens-resumo">Carregando registros...</p>
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="registros-imagens-refresh">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table id="tabela-registros-imagens">
+                            <thead>
+                                <tr>
+                                    <th>Data/Hora</th>
+                                    <th>Armário</th>
+                                    <th>Contexto</th>
+                                    <th>Título</th>
+                                    <th>Responsável</th>
+                                    <th>Imagem</th>
                                 </tr>
                             </thead>
                             <tbody>
