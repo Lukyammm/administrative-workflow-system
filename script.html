@@ -1,6 +1,6 @@
 <script>
         // URL do Google Apps Script - ATUALIZE COM SUA URL
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbGb6sQR1auYsyTB-kwPos7Cd7swLuTUDiAzzpwTPW2cj76ykYzKYgBDXA-g5ef7pbpw/exec';
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0AXcp3XLAaAuK7JOiBk9200Y5yU57e2sd1fi49_H4M4OiybBz2ZiBI5tJ4yvZ9aryug/exec';
         // Estado da aplicação
         function criarEstadoLiberacaoInicial() {
             return {
@@ -4670,6 +4670,14 @@
                             : armario.status === 'proximo'
                                 ? 'Próximo'
                                 : 'Vencido';
+                const statusIcones = {
+                    livre: 'fas fa-check',
+                    'em-uso': 'fas fa-user-clock',
+                    proximo: 'fas fa-exclamation-triangle',
+                    vencido: 'fas fa-times-circle',
+                    contingencia: 'fas fa-shield-alt'
+                };
+                const statusIcone = statusIcones[classeStatus] || 'fas fa-circle';
                 const nomePaciente = armario.status === 'livre'
                     ? 'Disponível'
                     : (armario.nomePaciente || '-');
@@ -4680,11 +4688,7 @@
                             <span class="armario-number prominent">${armario.numero}</span>
                         </div>
                         <div class="armario-status-icon status-${classeStatus}" aria-label="${statusTexto}">
-                            <svg viewBox="0 0 64 64" class="armario-status-icon-svg" aria-hidden="true" focusable="false">
-                                <path class="fin-shape" d="M19 40c2-12 9-22 20-26 2-1 4 1 3 3-2 4-4 8-5 13 5 1 8 4 10 8-2 2-4 3-7 3-4 0-9-1-21-1z"></path>
-                                <path class="wave-shape" d="M14 45c2 2 4 2 6 0 2-2 4-2 6 0 2 2 4 2 6 0 2-2 4-2 6 0 2 2 4 2 6 0"></path>
-                                <path class="check-shape" d="M44 30l4 4 7-8"></path>
-                            </svg>
+                            <i class="${statusIcone}" aria-hidden="true"></i>
                             <span class="sr-only">${statusTexto}</span>
                         </div>
                     </div>
