@@ -2405,21 +2405,19 @@
             gap: 20px;
         }
         .armario-card {
-            background: linear-gradient(158deg, #f3f6fb 0%, #eef2f8 48%, #e9eef6 100%);
-            border-radius: 28px;
-            box-shadow: 0 16px 34px rgba(38, 58, 88, 0.12);
-            padding: 34px 30px 30px;
+            background: color-mix(in srgb, var(--surface-color) 86%, var(--bg-color) 14%);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: 16px 16px 14px;
             transition: all 0.3s ease;
             cursor: pointer;
             border-left: 0;
             position: relative;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-            min-height: 212px;
-            gap: 24px;
-            border: 1px solid #dbe3ee;
-            overflow: hidden;
+            gap: 10px;
+            border: 1px solid color-mix(in srgb, var(--primary-color) 8%, var(--border-color) 92%);
+            backdrop-filter: blur(8px);
         }
         .armario-card.skeleton {
             position: relative;
@@ -2475,20 +2473,26 @@
             100% { transform: translateX(100%); }
         }
         .armario-card.em-uso {
-            color: #173251;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(125deg,
+                    color-mix(in srgb, var(--em-uso-card-bg) 78%, transparent) 0%,
+                    color-mix(in srgb, var(--em-uso-card-bg) 70%, var(--surface-color) 30%) 52%,
+                    color-mix(in srgb, var(--em-uso-card-bg) 64%, var(--surface-color) 36%) 100%);
+            color: var(--em-uso-text);
+            box-shadow: 0 7px 16px color-mix(in srgb, var(--em-uso-border-color) 26%, transparent);
         }
         .armario-status-bar {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            height: 18px;
-            border-radius: 28px 28px 0 0;
-            background: #87b8b5;
-            overflow: visible;
+            height: 6px;
+            border-radius: 12px 12px 0 0;
+            background: var(--livre-main);
         }
         .armario-status-bar.status-em-uso {
-            background: #3f638f;
+            background: var(--em-uso-border-color);
         }
         .armario-status-bar.status-proximo {
             background: var(--proximo-main);
@@ -2530,25 +2534,8 @@
             border-left-color: var(--vencido-main);
         }
         .armario-card:hover {
-            box-shadow: 0 18px 40px rgba(38, 58, 88, 0.16);
-            transform: translateY(-2px);
-        }
-        .armario-status-bar::after {
-            content: "";
-            position: absolute;
-            top: -15px;
-            right: 24px;
-            width: 68px;
-            height: 27px;
-            border-radius: 62% 38% 42% 58% / 84% 74% 26% 16%;
-            background: inherit;
-            transform: rotate(-5deg);
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
-        }
-        .armario-status-bar.status-em-uso::after {
-            left: 20px;
-            right: auto;
-            transform: scaleX(-1) rotate(-7deg);
+            box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow-color) 76%, transparent);
+            transform: translateY(-4px);
         }
         .armario-card.alta-registrada {
             border: 1.5px solid color-mix(in srgb, var(--danger-color) 65%, var(--dark-color) 15%);
@@ -2720,7 +2707,7 @@
             margin-bottom: 10px;
         }
         .armario-header.minimal {
-            margin-bottom: 0;
+            margin-bottom: 2px;
         }
         .armario-identificacao {
             display: inline-flex;
@@ -2740,87 +2727,15 @@
             color: var(--dark-color);
         }
         .armario-number.prominent {
-            font-size: clamp(3rem, 2.1vw, 3.6rem);
-            font-weight: 700;
+            font-size: 2rem;
+            font-weight: 800;
             letter-spacing: 0.02em;
-            line-height: 1;
         }
-        .armario-card.em-uso .armario-number,
-        .armario-card.livre .armario-number {
-            color: #163252;
+        .armario-card.em-uso .armario-number {
+            color: var(--em-uso-text);
         }
         .armario-card.em-uso .armario-label {
             color: color-mix(in srgb, var(--em-uso-text) 85%, transparent);
-        }
-        .armario-paciente-line {
-            font-size: clamp(2rem, 1.9vw, 2.8rem);
-            font-weight: 500;
-            letter-spacing: 0.01em;
-            color: #1e3b5d;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-top: 14px;
-            position: relative;
-            z-index: 2;
-        }
-        .armario-status-icon {
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
-            border: 2px solid #86a0bc;
-            display: grid;
-            place-items: center;
-            background: rgba(246, 250, 255, 0.45);
-            color: #6f88a4;
-        }
-        .armario-status-icon.status-livre {
-            border-color: #75a9a3;
-            color: #75a9a3;
-        }
-        .armario-status-icon-svg {
-            width: 44px;
-            height: 44px;
-            fill: currentColor;
-            stroke: currentColor;
-            stroke-width: 2;
-        }
-        .armario-status-icon-svg .wave-shape,
-        .armario-status-icon-svg .check-shape {
-            fill: none;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-        .armario-status-icon .check-shape { display: none; }
-        .armario-status-icon.status-livre .check-shape { display: block; }
-        .armario-card::before {
-            content: "";
-            position: absolute;
-            right: -36px;
-            bottom: -58px;
-            width: 62%;
-            height: 58%;
-            border-radius: 55% 0 0 0 / 62% 0 0 0;
-            border-top: 3px solid rgba(206, 217, 229, 0.85);
-            border-left: 0;
-            opacity: 0.8;
-        }
-        .armario-card::after {
-            content: "";
-            position: absolute;
-            right: 58px;
-            bottom: 38px;
-            width: 12px;
-            height: 12px;
-            border-radius: 58% 42% 64% 36%;
-            border: 2px solid rgba(178, 192, 208, 0.9);
-            border-left-width: 0;
-            border-top-width: 0;
-            transform: rotate(28deg);
-            box-shadow:
-                44px 3px 0 -1px rgba(194, 205, 217, 0.95),
-                58px 6px 0 -1px rgba(194, 205, 217, 0.95),
-                72px 8px 0 -1px rgba(194, 205, 217, 0.95);
         }
         .armario-status {
             padding: 4px 8px;
@@ -2866,19 +2781,19 @@
             border-style: dashed;
         }
         .armario-status-icon {
-            width: 72px;
-            height: 72px;
-            border-radius: 999px;
-            display: grid;
-            place-items: center;
-            border: 2px solid #86a0bc;
-            background: rgba(246, 250, 255, 0.45);
-            color: #6f88a4;
-            box-shadow: none;
+            width: 42px;
+            height: 42px;
+            border-radius: var(--radius-md);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: color-mix(in srgb, var(--livre-main) 16%, var(--surface-color) 84%);
+            color: var(--livre-main);
+            box-shadow: 0 10px 22px var(--shadow-color);
         }
         .armario-status-icon.status-em-uso {
-            border-color: #86a0bc;
-            color: #6f88a4;
+            background: color-mix(in srgb, var(--em-uso-card-bg) 40%, var(--surface-color) 60%);
+            color: var(--em-uso-border-color);
         }
         .armario-status-icon.status-proximo {
             background: color-mix(in srgb, var(--proximo-main) 20%, var(--surface-color) 80%);
@@ -2893,13 +2808,13 @@
             color: color-mix(in srgb, var(--contingencia-contrast) 82%, var(--surface-color) 18%);
         }
         .armario-paciente-line {
-            font-size: clamp(2rem, 1.9vw, 2.8rem);
-            font-weight: 500;
-            color: #1e3b5d;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-color);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-top: 14px;
+            margin-top: 6px;
         }
         [data-theme="shark"] .armario-card {
             overflow: hidden;
@@ -2962,6 +2877,19 @@
             border: 2px solid color-mix(in srgb, #7b92ab 62%, transparent);
             background: color-mix(in srgb, #eef5fb 92%, #dae6f0 8%);
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+        }
+        [data-theme="shark"] .armario-status-icon i::before {
+            content: "\f773";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+        }
+        [data-theme="shark"] .armario-status-icon.status-livre i::after {
+            content: "\f00c";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 0.58rem;
+            margin-left: 4px;
+            opacity: 0.85;
         }
         .armario-details {
             font-size: 0.9rem;
