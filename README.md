@@ -1,46 +1,129 @@
-# Consign
+# Consign 🗄️
 
-## Instalação
-1. Publique o projeto como WebApp no Google Apps Script mantendo o acesso aos usuários autorizados. A URL pública é injetada automaticamente no front-end; acesse o sistema sempre pelo endereço implantado para evitar falha de comunicação.
-2. Atualize o `PASTA_DRIVE_FOTOS_ID` em `CODE.gs` se precisar apontar para outra pasta do Drive.
-3. Certifique-se de que a planilha tenha a aba **Registro de Imagens** (é criada automaticamente no primeiro uso) para indexar as fotos salvas nos termos e nas movimentações.
+Sistema web para gestão operacional de guarda-volumes hospitalares, com controle de armários para visitantes e acompanhantes, emissão de termo de responsabilidade, evidências por imagem e auditoria de ponta a ponta.
 
-## Permissões
-- A aplicação solicita acesso ao Drive para salvar PDFs e fotos de evidência.
-- Habilite o escopo para manipulação de arquivos do Drive (createFile/getFolder).
-- Garanta acesso apenas à pasta configurada em `PASTA_DRIVE_FOTOS_ID` para salvar as imagens de termos, movimentações e contingências.
+---
 
-## Principais funções
-- **Registro de volumes no termo:** cada volume agora exige uma foto capturada no ato do cadastro.
-- **Encerramento do termo:** antes da assinatura final é necessário anexar foto da entrega ao acompanhante.
-- **Movimentações (entrada/saída):** cada registro requer uma foto e é salvo na pasta configurada.
-- **Registro de imagens:** toda foto anexada (volumes, movimentações e entrega do termo) é indexada na aba "Registro de Imagens" para facilitar consultas posteriores.
-- **Contingências:** ao registrar uma contingência é obrigatório anexar uma foto (JPG/PNG até 2 MB), salva automaticamente na pasta de evidências e indexada na planilha.
+## 📌 Descrição objetiva
 
-- **Encerramento e liberação unificados:** a finalização do termo e a liberação do armário agora ocorrem em uma única ação para reduzir o tempo de espera e manter o fluxo mais ágil.
+O **Consign** é um WebApp construído com **Google Apps Script + Google Sheets** para organizar a rotina de guarda-volumes em ambiente hospitalar. O sistema centraliza cadastro, movimentações, devoluções, termo assinado e histórico operacional em uma única interface.
 
+---
 
-### Configuração de permissões
-- Leitura/escrita na planilha (LOG, CONFIG, SNAPSHOTS) para cálculos, alertas e snapshots.
-- Nenhum escopo adicional é exigido para o Monitor além dos já necessários para o app (Drive continua sendo usado para PDFs/fotos se aplicável).
+## ❗ Problema que o sistema resolve
 
-### Funções principais do Monitor
-- **getDashboardData**: agrega KPIs, gráficos (linha, barras, heatmap), rankings e resumo por armário com filtros (período, status, unidade, perfil, solicitante, atendente e fora do SLA).
-- **salvarSnapshotDashboard**: grava KPIs filtrados na aba `SNAPSHOTS` para histórico.
-- **Exportação**: geração de CSV no cliente a partir dos dados retornados e PDF sintético com jsPDF.
-- **Fallback automático**: caso a aba `LOG` ainda não tenha dados, o dashboard passa a usar o histórico de Visitantes e Acompanhantes para montar as métricas básicas.
+Em operações hospitalares, o controle de armários costuma ser distribuído entre anotações manuais, planilhas paralelas e comunicação informal. Isso gera:
 
-### Limitações conhecidas
-- Os cálculos dependem da consistência dos timestamps; registros sem datas são ignorados.
-- O heatmap considera apenas `timestamp_criacao` e utiliza o fuso configurado no Apps Script.
-- Relatórios PDF são sintéticos (título e KPIs resumidos); gráficos completos podem ser exportados via CSV e reconstruídos externamente se necessário.
+- baixa rastreabilidade de quem usou cada armário;
+- risco de perda de informações e evidências;
+- lentidão na liberação de armários;
+- dificuldade para auditoria e conferência de plantão;
+- falhas no registro de termos e devoluções.
 
-## Resolução rápida para tela em branco
-1. Confirme que a URL pública do WebApp (em **Implantar > Implantar como aplicativo da web**) está ativa e copiável.
-2. Acesse novamente o WebApp; se a URL não for injetada, a página exibirá um aviso em fundo escuro com a URL detectada ou com a instrução de publicar o aplicativo.
-3. Caso veja o aviso de erro crítico, republique o WebApp, limpe o cache do navegador e tente novamente.
-4. Enquanto a URL não estiver válida, o botão de login bloqueará as requisições e mostrará o alerta de URL faltando em vez de enviar o formulário para uma página em branco.
+O **Consign** padroniza esse fluxo com registro estruturado, validações operacionais e histórico auditável.
 
-## Limitações conhecidas
-- As fotos são armazenadas apenas na pasta configurada e precisam de conectividade com o Drive.
-- O tamanho máximo aceito depende das cotas do Apps Script para arquivos base64.
+---
+
+## ⚙️ Principais funcionalidades
+
+- **Gestão de armários em tempo real** (livre, em uso, próximo do horário, vencido, contingência).
+- **Cadastro de visitantes e acompanhantes** com vínculo de paciente, leito, unidade e responsável.
+- **Termo de responsabilidade com fluxo guiado** (paciente, acompanhante, revisão e assinatura).
+- **Geração de PDF do termo** com armazenamento no Google Drive.
+- **Registro obrigatório de imagens** (volumes, movimentações, entrega e contingências).
+- **Indexação de evidências** na aba `Registro de Imagens` para consulta posterior.
+- **Módulo de liberações** por período, paciente e prontuário.
+- **Achados e perdidos** com histórico separado.
+- **Painel de monitoramento (dashboard)** com filtros e indicadores operacionais.
+- **Auditoria de eventos (LOGS)** para rastrear ações críticas.
+
+---
+
+## 🧱 Tecnologias utilizadas
+
+- **Google Apps Script** (back-end e publicação do WebApp)
+- **Google Sheets** (base de dados operacional)
+- **HTML5 + CSS3 + JavaScript** (interface do usuário)
+- **Google Drive API via Apps Script** (armazenamento de PDFs e imagens)
+- **jsPDF** (exportação de PDF no front-end, quando aplicável)
+
+---
+
+## 🗂️ Estrutura do projeto
+
+```text
+Consign/
+├── CODE.gs                # Back-end Apps Script (rotas, regras e persistência)
+├── index.html             # Tela de login/entrada
+├── script.html            # Lógica front-end e chamadas para o WebApp
+├── style.html             # Estilos da interface
+├── MANUAL_DO_USUARIO.md   # Guia funcional detalhado da operação
+├── relatorio.md           # Relatório técnico de revisão
+└── README.md              # Documentação principal do projeto
+```
+
+---
+
+## 🔄 Fluxo de funcionamento
+
+1. **Login** do usuário autorizado.
+2. **Seleção de perfil e unidade** para contextualizar a operação.
+3. **Cadastro de uso do armário** (visitante/acompanhante).
+4. **Registro de evidências obrigatórias** nos pontos críticos do processo.
+5. **Emissão/finalização do termo** (quando aplicável) com geração de PDF.
+6. **Liberação do armário** e atualização automática dos status.
+7. **Auditoria e consulta histórica** via logs, históricos e registro de imagens.
+
+---
+
+## 🖼️ Capturas de tela
+
+> Substitua os blocos abaixo pelas imagens reais do sistema.
+
+### Tela de login
+`![Login do Consign](./docs/screenshots/login.png)`
+
+### Monitor operacional
+`![Monitor de armários](./docs/screenshots/monitor.png)`
+
+### Termo de responsabilidade
+`![Fluxo do termo](./docs/screenshots/termo.png)`
+
+### Registro de imagens / evidências
+`![Registro de evidências](./docs/screenshots/evidencias.png)`
+
+---
+
+## ▶️ Como executar
+
+### Pré-requisitos
+
+- Conta Google com acesso ao **Apps Script**, **Sheets** e **Drive**.
+- Planilha principal do projeto com permissões de edição.
+
+### Passo a passo
+
+1. Crie (ou copie) um projeto no **Google Apps Script**.
+2. Adicione os arquivos do repositório (`CODE.gs`, `index.html`, `script.html`, `style.html`).
+3. Configure os IDs de pastas/planilhas nas constantes do `CODE.gs`.
+4. Verifique se as abas operacionais existem (ou se são criadas automaticamente).
+5. Publique em **Implantar → Implantar como aplicativo da web**.
+6. Defina o acesso conforme sua política interna (usuários autorizados).
+7. Abra a URL do WebApp e valide os fluxos principais (cadastro, termo, liberação e logs).
+
+---
+
+## 🚀 Melhorias futuras
+
+- controle de sessão com token assinado e expiração no servidor;
+- endurecimento de segurança (autorização por ação, proteção anti-clickjacking);
+- trilha de auditoria expandida com métricas de SLA por unidade;
+- dashboard executivo com séries históricas e comparativos por turno;
+- notificações automáticas para armários vencidos e pendências críticas.
+
+---
+
+## 👤 Autor
+
+Desenvolvido por **Lucas Leal**.  
+Projeto focado em operação real, rastreabilidade e eficiência em ambiente hospitalar.
