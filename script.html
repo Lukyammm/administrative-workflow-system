@@ -1,6 +1,6 @@
 <script>
         // URL do Google Apps Script - ATUALIZE COM SUA URL
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0AXcp3XLAaAuK7JOiBk9200Y5yU57e2sd1fi49_H4M4OiybBz2ZiBI5tJ4yvZ9aryug/exec';
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbGb6sQR1auYsyTB-kwPos7Cd7swLuTUDiAzzpwTPW2cj76ykYzKYgBDXA-g5ef7pbpw/exec';
         // Estado da aplicação
         function criarEstadoLiberacaoInicial() {
             return {
@@ -240,7 +240,7 @@
             if (storage) {
                 try {
                     const temaSalvo = storage.getItem(STORAGE_KEYS.tema);
-                    if (temaSalvo === 'dark' || temaSalvo === 'light' || temaSalvo === 'pink' || temaSalvo === 'shark') {
+                    if (temaSalvo === 'dark' || temaSalvo === 'light' || temaSalvo === 'pink') {
                         return temaSalvo;
                     }
                 } catch (erro) {
@@ -253,7 +253,7 @@
             return 'light';
         }
         function obterProximoTema(temaAtual) {
-            const ordem = ['light', 'dark', 'pink', 'shark'];
+            const ordem = ['light', 'dark', 'pink'];
             const indiceAtual = ordem.indexOf(temaAtual);
             if (indiceAtual === -1) return 'light';
             return ordem[(indiceAtual + 1) % ordem.length];
@@ -262,29 +262,27 @@
             const botaoTema = document.getElementById('theme-toggle');
             if (!botaoTema) return;
             const icone = botaoTema.querySelector('i');
-            const temaAtual = ['light', 'dark', 'pink', 'shark'].includes(tema) ? tema : 'light';
+            const temaAtual = tema === 'dark' || tema === 'pink' ? tema : 'light';
             const proximoTema = obterProximoTema(temaAtual);
             const labelMap = {
                 light: 'Ativar tema escuro',
                 dark: 'Ativar tema rosa',
-                pink: 'Ativar tema shark',
-                shark: 'Ativar tema claro'
+                pink: 'Ativar tema claro'
             };
             const iconMap = {
                 light: 'fas fa-sun',
                 dark: 'fas fa-moon',
-                pink: 'fas fa-heart',
-                shark: 'fas fa-fish-fins'
+                pink: 'fas fa-heart'
             };
             if (icone) {
                 icone.className = iconMap[temaAtual] || 'fas fa-moon';
             }
             botaoTema.setAttribute('aria-label', labelMap[temaAtual] || 'Alternar tema');
-            botaoTema.setAttribute('aria-pressed', temaAtual !== 'light' ? 'true' : 'false');
+            botaoTema.setAttribute('aria-pressed', temaAtual === 'dark' || temaAtual === 'pink' ? 'true' : 'false');
             botaoTema.dataset.nextTheme = proximoTema;
         }
         function aplicarTema(tema, salvarPreferencia = true) {
-            const temaFinal = ['light', 'dark', 'pink', 'shark'].includes(tema) ? tema : 'light';
+            const temaFinal = tema === 'dark' || tema === 'pink' ? tema : 'light';
             document.documentElement.setAttribute('data-theme', temaFinal);
             atualizarBotaoTema(temaFinal);
             if (!salvarPreferencia) return;
