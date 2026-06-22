@@ -3203,6 +3203,7 @@
             min-height: 100%;
         }
         .modal-large .modal-content {
+            width: min(calc(100vw - 40px), 960px);
             max-width: 960px;
         }
         .modal-full {
@@ -4779,10 +4780,19 @@
             color: var(--primary-color);
             font-size: 1.1rem;
         }
+
+        #movimentacao-modal.modal-large .modal-content {
+            width: min(calc(100vw - 40px), 1120px);
+            max-width: 1120px;
+            max-height: calc(100vh - 40px);
+        }
+        #movimentacao-modal .modal-body {
+            padding: clamp(16px, 2vw, 24px);
+        }
         .mov-modal-grid {
             display: grid;
-            grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
-            gap: 16px;
+            grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);
+            gap: clamp(14px, 1.8vw, 22px);
             align-items: start;
         }
         .mov-form-grid {
@@ -5285,6 +5295,35 @@
             background: color-mix(in srgb, var(--danger-color) 18%, white 82%);
             box-shadow: 0 12px 22px color-mix(in srgb, var(--danger-color) 28%, transparent);
         }
+        @media (min-width: 761px) and (max-width: 980px) {
+            #movimentacao-modal .modal-header {
+                padding: 18px 22px;
+            }
+            .mov-card {
+                padding: 14px;
+            }
+            .mov-tabs {
+                grid-template-columns: 1fr;
+            }
+            .mov-tab {
+                min-height: 48px;
+                padding: 12px 10px;
+                font-size: 0.94rem;
+            }
+            .mov-itens-resumo,
+            .movimentacoes-list {
+                max-height: 220px;
+                overflow: auto;
+                overscroll-behavior: contain;
+            }
+            .mov-signature-header {
+                align-items: flex-start;
+            }
+            .mov-signature-area .wizard-signature-canvas {
+                height: clamp(180px, 26vh, 240px);
+                min-height: 180px;
+            }
+        }
         @media (max-width: 720px) {
             .movimentacao-item-row {
                 grid-template-columns: 1fr;
@@ -5296,7 +5335,7 @@
                 grid-template-columns: 1fr;
             }
         }
-        @media (max-width: 960px) {
+        @media (max-width: 760px) {
             .mov-modal-grid {
                 grid-template-columns: 1fr;
             }
