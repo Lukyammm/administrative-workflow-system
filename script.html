@@ -9630,7 +9630,7 @@
             if (tipoNormalizado === 'entrada') {
                 const vazio = document.createElement('div');
                 vazio.className = 'info-box info-compact';
-                vazio.textContent = 'Adicione os itens de entrada usando o botão abaixo.';
+                vazio.textContent = 'Os itens que você adicionar aparecem aqui.';
                 elementos.movItensList?.appendChild(vazio);
                 return;
             }
@@ -9694,23 +9694,23 @@
             const tipoNormalizado = normalizarTexto(tipo);
             const descricaoPorTipo = {
                 entrada: {
-                    label: 'Observações da entrada (opcional)',
-                    placeholder: 'Adicione observações gerais da entrada, se necessário.',
-                    helper: 'Informe quantidade e descrição obrigatoriamente na lista de itens.',
-                    pill: 'Entrada com rastreio'
+                    label: 'Observações (opcional)',
+                    placeholder: 'Algo a registrar sobre a entrada? (opcional)',
+                    helper: 'Confira a lista de itens antes de confirmar.',
+                    pill: 'Entrada'
                 },
                 saida: {
-                    label: 'Observações da saída (opcional)',
-                    placeholder: 'Use se precisar contextualizar a retirada.',
-                    helper: 'Defina a quantidade que sairá em cada item pelo ícone de lixeira.',
-                    pill: 'Saída com controle de quantidade'
+                    label: 'Observações (opcional)',
+                    placeholder: 'Algo a registrar sobre a retirada? (opcional)',
+                    helper: 'Toque no item para definir a quantidade que sairá.',
+                    pill: 'Saída'
                 }
             };
 
             const contexto = descricaoPorTipo[tipoNormalizado] || {
-                label: 'Observações da movimentação (opcional)',
-                placeholder: 'Selecione entrada ou saída para habilitar os campos.',
-                helper: 'Selecione o tipo de movimentação para carregar os itens.',
+                label: 'Observações (opcional)',
+                placeholder: 'Algo a registrar? (opcional)',
+                helper: 'Escolha o tipo de movimentação para carregar os itens.',
                 pill: 'Movimentação'
             };
             if (elementos.movObservacaoLabel) {

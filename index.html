@@ -1191,67 +1191,54 @@
                     <input type="hidden" id="mov-tipo" value="">
                     <div class="mov-modal-grid">
                         <section class="mov-card mov-card-operations">
-                            <header class="mov-card-header">
-                                <div>
-                                    <p class="eyebrow">Registrar nova movimentação</p>
-                                    <h4>Fluxo principal</h4>
-                                    <p class="helper-text">Escolha o tipo da movimentação para habilitar os campos e registrar.</p>
-                                </div>
-                            </header>
                             <div class="mov-card-body">
                                 <div class="mov-tabs" role="tablist" aria-label="Tipo de movimentação">
-                                    <button type="button" class="mov-tab mov-tab-entrada" data-mov-tab="entrada" aria-selected="false">Entrada</button>
-                                    <button type="button" class="mov-tab mov-tab-saida" data-mov-tab="saida" aria-selected="false">Saídas de pertences</button>
+                                    <button type="button" class="mov-tab mov-tab-entrada" data-mov-tab="entrada" aria-selected="false"><i class="fas fa-arrow-down" aria-hidden="true"></i> Guardar (Entrada)</button>
+                                    <button type="button" class="mov-tab mov-tab-saida" data-mov-tab="saida" aria-selected="false"><i class="fas fa-arrow-up" aria-hidden="true"></i> Retirar (Saída)</button>
                                 </div>
                                 <div class="mov-tab-placeholder" id="mov-tab-placeholder">
-                                    <p class="helper-text">Selecione Entrada ou Saída para começar.</p>
+                                    <i class="fas fa-hand-pointer" aria-hidden="true"></i>
+                                    <span>Escolha <strong>Guardar</strong> ou <strong>Retirar</strong> acima para começar.</span>
                                 </div>
                                 <div class="mov-tab-panel" data-mov-panel="entrada">
-                                    <p class="helper-text">Informe a quantidade e descreva o volume a ser movimentado.</p>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label for="mov-entrada-quantidade">Quantidade de volume</label>
-                                            <input type="number" min="1" step="1" id="mov-entrada-quantidade" class="form-control" placeholder="0" aria-describedby="mov-entrada-help">
+                                    <div class="mov-quick-add">
+                                        <div class="form-group mov-quick-qtd">
+                                            <label for="mov-entrada-quantidade">Qtd.</label>
+                                            <input type="number" min="1" step="1" id="mov-entrada-quantidade" class="form-control" placeholder="1" aria-describedby="mov-entrada-help">
                                         </div>
-                                        <div class="form-group">
-                                            <label for="mov-entrada-descricao">Descrição do volume</label>
-                                            <input type="text" list="termo-itens-sugestoes" id="mov-entrada-descricao" class="form-control" placeholder="Descreva ou selecione o volume">
+                                        <div class="form-group mov-quick-desc">
+                                            <label for="mov-entrada-descricao">O que está sendo guardado?</label>
+                                            <input type="text" list="termo-itens-sugestoes" id="mov-entrada-descricao" class="form-control" placeholder="Ex.: mochila, celular, documentos...">
                                         </div>
+                                        <button type="button" class="btn btn-primary mov-quick-btn" id="mov-entrada-adicionar"><i class="fas fa-plus" aria-hidden="true"></i> Adicionar</button>
                                     </div>
-                                    <div class="form-inline-actions">
-                                        <button type="button" class="btn btn-secondary" id="mov-entrada-adicionar">Adicionar à entrada</button>
-                                        <span class="helper-text" id="mov-entrada-help">Informe a descrição do volume e quantidade maior que zero.</span>
-                                    </div>
+                                    <span class="helper-text" id="mov-entrada-help">Adicione quantos itens precisar — eles aparecem na lista abaixo.</span>
                                 </div>
                                 <div class="mov-tab-panel" data-mov-panel="saida">
-                                    <p class="helper-text">Todos os itens registrados aparecem abaixo. Clique no ícone para definir quanto será retirado.</p>
-                                    <div class="form-inline-actions space-between">
-                                        <span class="pill">Listagem de saída</span>
-                                        <button type="button" class="btn btn-ghost" id="mov-saida-preencher">Recarregar lista</button>
-                                    </div>
-                                    <div class="info-box info-compact">Itens carregam sem edição direta de quantidade ou descrição. Use o ícone para escolher a quantidade retirada ou limpar a seleção.</div>
+                                    <span class="helper-text">Toque em um item da lista para escolher quanto será retirado.</span>
                                     <div class="form-inline-actions">
-                                        <button type="button" class="btn btn-secondary" id="mov-saida-add-personalizado">O item que quero retirar não está cadastrado</button>
+                                        <button type="button" class="btn btn-secondary" id="mov-saida-add-personalizado"><i class="fas fa-plus" aria-hidden="true"></i> Item fora da lista</button>
+                                        <button type="button" class="btn btn-ghost" id="mov-saida-preencher"><i class="fas fa-rotate" aria-hidden="true"></i> Recarregar</button>
                                     </div>
                                 </div>
                                 <div class="mov-flow-content hidden" id="mov-flow-content">
                                     <div class="form-group">
                                         <div class="form-group-header">
                                             <label id="mov-itens-label">Itens desta movimentação</label>
-                                            <span class="pill" id="mov-itens-pills">Listagem obrigatória</span>
+                                            <span class="pill" id="mov-itens-pills">Obrigatório</span>
                                         </div>
-                                        <div class="helper-text" id="mov-itens-helper">Prefira reaproveitar os volumes cadastrados na abertura ou em entradas anteriores para manter a rastreabilidade.</div>
+                                        <div class="helper-text" id="mov-itens-helper">Reaproveite os volumes já cadastrados para manter a rastreabilidade.</div>
                                         <div class="movimentacao-itens-list" id="mov-itens-list"></div>
                                     </div>
                                     <div class="form-group" id="mov-observacao-group">
-                                        <label for="mov-observacao" id="mov-observacao-label">Observações da movimentação</label>
-                                        <textarea id="mov-observacao" class="form-control" rows="3" placeholder="Use apenas se precisar registrar detalhes"></textarea>
+                                        <label for="mov-observacao" id="mov-observacao-label">Observações (opcional)</label>
+                                        <textarea id="mov-observacao" class="form-control" rows="2" placeholder="Algo a registrar? (opcional)"></textarea>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Responsável pelo registro</label>
-                                        <div class="form-static highlight" id="mov-responsavel-info">Será preenchido automaticamente com seu usuário.</div>
-                                    </div>
-                                    <div class="form-row">
+                                    <div class="mov-meta-row">
+                                        <div class="form-group mov-meta-responsavel">
+                                            <label>Responsável</label>
+                                            <div class="form-static highlight" id="mov-responsavel-info">Preenchido automaticamente.</div>
+                                        </div>
                                         <div class="form-group">
                                             <label for="mov-data">Data</label>
                                             <input type="date" id="mov-data" class="form-control" required>
@@ -1266,30 +1253,15 @@
                         </section>
                         <aside class="mov-card-stack mov-card-info">
                             <div class="mov-card">
-                                <header class="mov-card-header">
-                                    <div>
-                                        <p class="eyebrow">Informações e histórico</p>
-                                        <h4>Resumo rápido</h4>
-                                    </div>
-                                </header>
+                                <h4 class="mov-card-title"><i class="fas fa-box-open" aria-hidden="true"></i> O que está no armário</h4>
                                 <div class="mov-card-body">
-                                    <div class="info-box info-compact">
-                                        Resumo das movimentações já registradas. Itens pendentes ou removidos ficam destacados.
-                                    </div>
                                     <div class="mov-itens-resumo" id="mov-itens-resumo">
-                                        <div class="mov-itens-resumo-header">Itens registrados no armário</div>
                                         <div class="mov-itens-resumo-body" id="mov-itens-resumo-body">Carregando itens...</div>
                                     </div>
                                 </div>
                             </div>
                             <div class="mov-card">
-                                <header class="mov-card-header">
-                                    <div>
-                                        <p class="eyebrow">Linha do tempo</p>
-                                        <h4>Histórico de movimentações</h4>
-                                        <p class="helper-text">Acompanhe todas as entradas e saídas deste armário.</p>
-                                    </div>
-                                </header>
+                                <h4 class="mov-card-title"><i class="fas fa-clock-rotate-left" aria-hidden="true"></i> Histórico</h4>
                                 <div class="mov-card-body">
                                     <div class="movimentacoes-list" id="movimentacoes-list"></div>
                                 </div>
@@ -1299,7 +1271,7 @@
                             <div class="mov-signature-card">
                                 <div class="mov-signature-header">
                                     <label class="wizard-required" for="mov-signature-canvas">Assinatura do responsável</label>
-                                    <p class="helper-text">Coletada ao final, alinhada entre as colunas.</p>
+                                    <p class="helper-text">Último passo para confirmar a movimentação.</p>
                                 </div>
                                 <div class="wizard-signature-area mov-signature-area">
                                     <canvas id="mov-signature-canvas" class="wizard-signature-canvas" aria-label="Área para assinatura da movimentação"></canvas>
@@ -1311,7 +1283,7 @@
                                 <div class="wizard-error">Colha a assinatura para registrar a movimentação.</div>
                             </div>
                             <div class="form-actions align-start signature-actions">
-                                <button type="submit" class="btn btn-primary btn-cta-mov">Atualizar Movimentação</button>
+                                <button type="submit" class="btn btn-primary btn-cta-mov"><i class="fas fa-check" aria-hidden="true"></i> Confirmar movimentação</button>
                             </div>
                         </div>
                     </div>
