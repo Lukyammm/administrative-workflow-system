@@ -2,7 +2,7 @@
 function doGet() {
   var template = HtmlService.createTemplateFromFile('index');
   return template.evaluate()
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setTitle('Cosign - Gerenciamento de Armários');
 }
@@ -960,7 +960,11 @@ function inicializarPlanilha() {
       },
       {
         nome: 'Usuários',
-        cabecalhos: ['ID', 'Nome', 'Email', 'Perfil', 'Acesso Visitantes', 'Acesso Acompanhantes', 'Data Cadastro', 'Status', 'Senha', 'Unidades']
+        cabecalhos: ['ID', 'Nome', 'Email', 'Perfil', 'Acesso Visitantes', 'Acesso Acompanhantes', 'Data Cadastro', 'Status', 'Senha', 'Unidades', 'Precisa Trocar Senha']
+      },
+      {
+        nome: NOME_ABA_SESSOES,
+        cabecalhos: ['TokenHash', 'UsuarioId', 'Perfil', 'PrecisaTrocarSenha', 'CriadoEm', 'ExpiraEm']
       },
       { 
         nome: 'LOGS', 
@@ -991,9 +995,13 @@ function inicializarPlanilha() {
       }
     });
     
+    // Migração para instalações já existentes: garante a coluna de troca de senha
+    // (a criação acima só escreve cabeçalhos em abas novas).
+    garantirColunaPrecisaTrocarSenha();
+
     // Adicionar alguns dados iniciais de exemplo
     adicionarDadosIniciais();
-    
+
     registrarLog('SISTEMA', 'Planilha inicializada com sucesso');
 
     limparCacheArmarios();
@@ -1004,9 +1012,50 @@ function inicializarPlanilha() {
     limparCacheMovimentacoes();
 
     return { success: true, message: 'Planilha inicializada com sucesso' };
-    
+
   } catch (error) {
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
+  }
+}
+
+// Garante a coluna "Precisa Trocar Senha" em instalações já existentes e força a
+// rotação da senha padrão (admin123) caso ela ainda esteja em uso.
+function garantirColunaPrecisaTrocarSenha() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Usuários');
+    if (!sheet || sheet.getLastColumn() < 1) {
+      return;
+    }
+    var ultimaColuna = sheet.getLastColumn();
+    var cabecalhos = sheet.getRange(1, 1, 1, ultimaColuna).getValues()[0];
+    var existe = cabecalhos.some(function(cabecalho) {
+      return normalizarTextoBasico(cabecalho) === 'precisa trocar senha';
+    });
+    if (!existe) {
+      sheet.getRange(1, ultimaColuna + 1).setValue('Precisa Trocar Senha');
+    }
+
+    if (sheet.getLastRow() < 2) {
+      return;
+    }
+    // Marca para troca obrigatória qualquer usuário que ainda use a senha padrão.
+    var estrutura = obterEstruturaPlanilha(sheet);
+    var indiceSenha = obterIndiceColuna(estrutura, 'senha', null);
+    var indiceFlag = obterIndiceColuna(estrutura, ['precisa trocar senha', 'precisatrocarsenha'], null);
+    if (indiceSenha === null || indiceSenha === undefined || indiceFlag === null || indiceFlag === undefined) {
+      return;
+    }
+    var totalColunas = estrutura.ultimaColuna || sheet.getLastColumn();
+    var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, totalColunas).getValues();
+    for (var i = 0; i < valores.length; i++) {
+      var senhaArmazenada = (valores[i][indiceSenha] || '').toString().trim();
+      if (senhaArmazenada && validarSenha('admin123', senhaArmazenada)) {
+        sheet.getRange(i + 2, indiceFlag + 1).setValue('true');
+      }
+    }
+  } catch (erro) {
+    // Migração best-effort; não deve interromper a inicialização.
   }
 }
 
@@ -1448,6 +1497,145 @@ function limparTentativasLogin(login) {
   cache.remove(obterChaveBloqueioLogin(login));
 }
 
+// ===== Sessões com token (autenticação server-side) =====
+var NOME_ABA_SESSOES = 'Sessões';
+var SESSAO_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
+
+function calcularHashToken(token) {
+  // Token é um UUID de alta entropia; SHA-256 simples é suficiente para indexar.
+  return calcularHashSenha(token, 'sessao');
+}
+
+function obterAbaSessoes() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    return null;
+  }
+  var sheet = ss.getSheetByName(NOME_ABA_SESSOES);
+  if (!sheet) {
+    sheet = ss.insertSheet(NOME_ABA_SESSOES);
+    sheet.getRange(1, 1, 1, 6).setValues([[
+      'TokenHash', 'UsuarioId', 'Perfil', 'PrecisaTrocarSenha', 'CriadoEm', 'ExpiraEm'
+    ]]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function criarSessao(usuarioId, perfil, precisaTrocarSenha) {
+  var sheet = obterAbaSessoes();
+  if (!sheet) {
+    return '';
+  }
+  limparSessoesExpiradas(sheet);
+  var token = Utilities.getUuid() + Utilities.getUuid();
+  var agora = Date.now();
+  sheet.appendRow([
+    calcularHashToken(token),
+    parseInt(usuarioId, 10) || '',
+    (perfil || '').toString(),
+    precisaTrocarSenha ? 'true' : 'false',
+    new Date(agora).toISOString(),
+    new Date(agora + SESSAO_TTL_MS).toISOString()
+  ]);
+  return token;
+}
+
+function resolverSessao(token) {
+  if (!token) {
+    return null;
+  }
+  var sheet = obterAbaSessoes();
+  if (!sheet || sheet.getLastRow() < 2) {
+    return null;
+  }
+  var tokenHash = calcularHashToken(token.toString());
+  var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+  var agora = Date.now();
+  for (var i = 0; i < valores.length; i++) {
+    if (valores[i][0] === tokenHash) {
+      var expiraEm = new Date(valores[i][5]).getTime();
+      if (isNaN(expiraEm) || expiraEm <= agora) {
+        // Expirada: remove e nega.
+        try { sheet.deleteRow(i + 2); } catch (erroDel) {}
+        return null;
+      }
+      // Renova o TTL deslizante apenas quando passou da metade, evitando uma
+      // escrita na planilha a cada requisição.
+      if ((expiraEm - agora) < (SESSAO_TTL_MS / 2)) {
+        var novoExpira = new Date(agora + SESSAO_TTL_MS).toISOString();
+        try { sheet.getRange(i + 2, 6).setValue(novoExpira); } catch (erroRenova) {}
+      }
+      return {
+        usuarioId: parseInt(valores[i][1], 10) || null,
+        perfil: (valores[i][2] || '').toString(),
+        precisaTrocarSenha: normalizarTextoBasico(valores[i][3]) === 'true',
+        linha: i + 2
+      };
+    }
+  }
+  return null;
+}
+
+function encerrarSessao(token) {
+  try {
+    if (!token) {
+      return { success: true };
+    }
+    var sheet = obterAbaSessoes();
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true };
+    }
+    var tokenHash = calcularHashToken(token.toString());
+    var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    for (var i = valores.length - 1; i >= 0; i--) {
+      if (valores[i][0] === tokenHash) {
+        sheet.deleteRow(i + 2);
+      }
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: true };
+  }
+}
+
+function atualizarFlagSenhaSessoes(usuarioId, precisaTrocarSenha) {
+  try {
+    var sheet = obterAbaSessoes();
+    if (!sheet || sheet.getLastRow() < 2) {
+      return;
+    }
+    var idAlvo = parseInt(usuarioId, 10);
+    var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    for (var i = 0; i < valores.length; i++) {
+      if ((parseInt(valores[i][1], 10) || null) === idAlvo) {
+        sheet.getRange(i + 2, 4).setValue(precisaTrocarSenha ? 'true' : 'false');
+      }
+    }
+  } catch (erro) {
+    // Ignora falha de housekeeping.
+  }
+}
+
+function limparSessoesExpiradas(sheet) {
+  try {
+    sheet = sheet || obterAbaSessoes();
+    if (!sheet || sheet.getLastRow() < 2) {
+      return;
+    }
+    var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    var agora = Date.now();
+    for (var i = valores.length - 1; i >= 0; i--) {
+      var expiraEm = new Date(valores[i][5]).getTime();
+      if (isNaN(expiraEm) || expiraEm <= agora) {
+        try { sheet.deleteRow(i + 2); } catch (erroDel) {}
+      }
+    }
+  } catch (erro) {
+    // Ignora falha de limpeza.
+  }
+}
+
 function obterUsuarioPorId(id, estrutura, valores) {
   if (!id) {
     return null;
@@ -1462,7 +1650,9 @@ function obterUsuarioPorId(id, estrutura, valores) {
 }
 
 function validarPermissaoAdmin(parametros) {
-  var id = parseInt(parametros && parametros.usuarioId, 10);
+  // Confia exclusivamente no id resolvido pela sessão (server-side).
+  // O usuarioId enviado pelo cliente é ignorado para evitar falsificação.
+  var id = parseInt(sessaoUsuarioIdAtual, 10);
   if (!id) {
     return { ok: false, error: 'Acesso negado' };
   }
@@ -1520,8 +1710,9 @@ function adicionarDadosIniciais() {
   if (usuariosSheet.getLastRow() === 1) {
     var dataCadastroUsuario = obterDataHoraAtualFormatada().dataHoraIso;
     var senhaAdmin = criarHashSenha('admin123');
-    usuariosSheet.getRange(2, 1, 1, 10)
-      .setValues([[1, 'Administrador', 'admin', 'admin', true, true, dataCadastroUsuario, 'ativo', senhaAdmin, 'all']]);
+    // Senha inicial provisória: o admin é obrigado a trocá-la no primeiro acesso.
+    usuariosSheet.getRange(2, 1, 1, 11)
+      .setValues([[1, 'Administrador', 'admin', 'admin', true, true, dataCadastroUsuario, 'ativo', senhaAdmin, 'all', 'true']]);
   }
 
   // Cadastrar unidades iniciais
@@ -1539,6 +1730,57 @@ function adicionarDadosIniciais() {
 // Função principal para lidar com requisições POST
 var usuarioContextoRequisicao = '';
 var usuarioContextoRequisicaoId = null;
+
+// Contexto de sessão resolvido server-side (fonte de verdade para autorização).
+var sessaoTokenAtual = '';
+var sessaoUsuarioIdAtual = null;
+var sessaoPerfilAtual = '';
+var sessaoPrecisaTrocarSenha = false;
+
+// Ações liberadas sem sessão (login, verificação/inicialização da planilha).
+var ACOES_PUBLICAS = {
+  autenticarUsuario: true,
+  verificarInicializacao: true,
+  inicializarPlanilha: true
+};
+
+// Ações que exigem perfil administrador.
+var ACOES_ADMIN = {
+  getUsuarios: true,
+  cadastrarUsuario: true,
+  atualizarUsuario: true,
+  excluirUsuario: true,
+  getLogs: true,
+  executarBackupSistema: true,
+  cadastrarUnidade: true,
+  alternarStatusUnidade: true,
+  // Cadastro/ocupação de armários é restrito a admin (espelha as travas da UI:
+  // "Apenas administradores podem registrar ocupações" e a página de cadastro físico).
+  cadastrarArmario: true,
+  cadastrarArmarioFisico: true
+};
+
+// Ações permitidas mesmo quando o usuário precisa trocar a senha.
+var ACOES_SEM_BLOQUEIO_SENHA = {
+  trocarSenha: true,
+  encerrarSessao: true
+};
+
+function respostaJSON(objeto) {
+  return ContentService.createTextOutput(JSON.stringify(objeto))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function respostaAcessoNegado(motivo, mensagem) {
+  return respostaJSON({ success: false, error: mensagem || 'Acesso negado.', motivo: motivo });
+}
+
+function resetarContextoSessao() {
+  sessaoTokenAtual = '';
+  sessaoUsuarioIdAtual = null;
+  sessaoPerfilAtual = '';
+  sessaoPrecisaTrocarSenha = false;
+}
 
 function definirContextoUsuario(parametros) {
   usuarioContextoRequisicao = '';
@@ -1586,6 +1828,7 @@ function definirContextoUsuario(parametros) {
 function limparContextoUsuario() {
   usuarioContextoRequisicao = '';
   usuarioContextoRequisicaoId = null;
+  resetarContextoSessao();
 }
 
 function handlePost(e) {
@@ -1635,6 +1878,37 @@ function handlePost(e) {
   definirContextoUsuario(e && e.parameter);
 
   try {
+    // ===== Gate central de autenticação/autorização =====
+    resetarContextoSessao();
+    var tokenRequisicao = (e.parameter && e.parameter.token) ? e.parameter.token.toString() : '';
+    var sessaoResolvida = null;
+    try {
+      sessaoResolvida = resolverSessao(tokenRequisicao);
+    } catch (erroSessao) {
+      sessaoResolvida = null;
+    }
+
+    if (sessaoResolvida) {
+      sessaoTokenAtual = tokenRequisicao;
+      sessaoUsuarioIdAtual = sessaoResolvida.usuarioId;
+      sessaoPerfilAtual = sessaoResolvida.perfil;
+      sessaoPrecisaTrocarSenha = sessaoResolvida.precisaTrocarSenha;
+      // O id confiável da sessão sobrescreve qualquer usuarioId enviado pelo cliente.
+      usuarioContextoRequisicaoId = sessaoResolvida.usuarioId;
+    }
+
+    if (!ACOES_PUBLICAS[action]) {
+      if (!sessaoResolvida) {
+        return respostaAcessoNegado('SESSAO_INVALIDA', 'Sessão inválida ou expirada. Faça login novamente.');
+      }
+      if (sessaoPrecisaTrocarSenha && !ACOES_SEM_BLOQUEIO_SENHA[action]) {
+        return respostaAcessoNegado('SENHA_EXPIRADA', 'É necessário trocar a senha antes de continuar.');
+      }
+      if (ACOES_ADMIN[action] && normalizarTextoBasico(sessaoPerfilAtual) !== 'admin') {
+        return respostaAcessoNegado('SEM_PERMISSAO', 'Acesso restrito a administradores.');
+      }
+    }
+
     switch(action) {
       case 'getArmarios':
         return ContentService.createTextOutput(JSON.stringify(getArmarios(
@@ -1687,6 +1961,14 @@ function handlePost(e) {
 
       case 'autenticarUsuario':
         return ContentService.createTextOutput(JSON.stringify(autenticarUsuario(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+
+      case 'trocarSenha':
+        return ContentService.createTextOutput(JSON.stringify(trocarSenha(e.parameter)))
+          .setMimeType(ContentService.MimeType.JSON);
+
+      case 'encerrarSessao':
+        return ContentService.createTextOutput(JSON.stringify(encerrarSessao(sessaoTokenAtual || (e.parameter && e.parameter.token))))
           .setMimeType(ContentService.MimeType.JSON);
 
       case 'registrarContingencia':
@@ -1822,8 +2104,8 @@ function handlePost(e) {
           .setMimeType(ContentService.MimeType.JSON);
     }
   } catch (error) {
-    registrarLog('ERRO', `Erro em handlePost: ${error.toString()}`);
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
+    registrarLog('ERRO', `Erro em handlePost (${action}): ${error.toString()}`);
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Erro ao processar a solicitação.' }))
       .setMimeType(ContentService.MimeType.JSON);
   } finally {
     var duracaoMs = Date.now() - inicioExecucao;
@@ -2300,7 +2582,7 @@ function getArmarios(tipo, incluirInternacoes, incluirTermos) {
       return { success: true, data: getArmariosFromSheet(sheetName, tipoNormalizado, mapa, mapaInternacoes) };
     } catch (error) {
       registrarLog('ERRO', `Erro ao buscar armários: ${error.toString()}`);
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -2692,7 +2974,7 @@ function cadastrarArmario(armarioData) {
 
   } catch (error) {
     registrarLog('ERRO', `Erro ao cadastrar armário: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -2886,7 +3168,7 @@ function registrarContingencia(dados) {
 
   } catch (error) {
     registrarLog('ERRO', `Erro ao registrar contingência: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -2987,7 +3269,7 @@ function registrarContingenciaTermo(dados) {
     };
   } catch (error) {
     registrarLog('ERRO', 'Erro ao registrar contingência para termo: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3089,7 +3371,7 @@ function atualizarHorarioVisitante(parametros) {
     };
   } catch (error) {
     registrarLog('ERRO', `Erro ao atualizar horário do armário: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3252,7 +3534,7 @@ function atualizarDadosArmario(parametros) {
 
   } catch (error) {
     registrarLog('ERRO', 'Erro ao atualizar dados do armário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3442,7 +3724,7 @@ function liberarArmario(id, tipo, numero, usuarioResponsavel) {
 
   } catch (error) {
     registrarLog('ERRO', `Erro ao liberar armário: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3502,7 +3784,7 @@ function getUsuarios() {
 
     } catch (error) {
       registrarLog('ERRO', `Erro ao buscar usuários: ${error.toString()}`);
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -3602,6 +3884,8 @@ function cadastrarUsuario(dados) {
     if (!definirValorLinhaFlexivel(novaLinha, estrutura, ['unidades', 'unidade', 'acesso unidades'], unidadesTexto)) {
       definirValorLinha(novaLinha, estrutura, 'unidades', unidadesTexto);
     }
+    // Novo usuário deve trocar a senha definida pelo admin no primeiro acesso.
+    definirValorLinhaFlexivel(novaLinha, estrutura, ['precisa trocar senha', 'precisatrocarsenha'], 'true');
 
     sheet.getRange(ultimaLinha + 1, 1, 1, totalColunas).setValues([novaLinha]);
 
@@ -3628,7 +3912,7 @@ function cadastrarUsuario(dados) {
 
   } catch (error) {
     registrarLog('ERRO', `Erro ao cadastrar usuário: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3752,7 +4036,7 @@ function atualizarUsuario(dados) {
 
   } catch (error) {
     registrarLog('ERRO', 'Erro ao atualizar usuário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3804,7 +4088,7 @@ function excluirUsuario(dados) {
 
   } catch (error) {
     registrarLog('ERRO', 'Erro ao excluir usuário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3896,30 +4180,99 @@ function autenticarUsuario(dados) {
     var unidadesTexto = obterValorLinhaFlexivel(linhaUsuario, estrutura, ['unidades', 'unidade', 'acesso unidades'], '');
     var unidadesLista = resolverIdsUnidadesArmazenadas(unidadesTexto, mapasUnidades);
 
+    var precisaTrocarSenha = converterParaBoolean(
+      obterValorLinhaFlexivel(linhaUsuario, estrutura, ['precisa trocar senha', 'precisatrocarsenha'], false)
+    );
+
+    var perfilUsuario = obterValorLinha(linhaUsuario, estrutura, 'perfil', '');
+    var idUsuario = obterValorLinha(linhaUsuario, estrutura, 'id', '');
+
     var usuarioEncontrado = {
-      id: obterValorLinha(linhaUsuario, estrutura, 'id', ''),
+      id: idUsuario,
       nome: obterValorLinha(linhaUsuario, estrutura, 'nome', ''),
       email: obterValorLinha(linhaUsuario, estrutura, 'email', ''),
       usuario: obterValorLinha(linhaUsuario, estrutura, 'usuario', login) || login,
       matricula: obterValorLinha(linhaUsuario, estrutura, 'matricula', ''),
-      perfil: obterValorLinha(linhaUsuario, estrutura, 'perfil', ''),
+      perfil: perfilUsuario,
       acessoVisitantes: converterParaBoolean(obterValorLinha(linhaUsuario, estrutura, 'acesso visitantes', false)),
       acessoAcompanhantes: converterParaBoolean(obterValorLinha(linhaUsuario, estrutura, 'acesso acompanhantes', false)),
       unidades: unidadesLista,
-      status: status
+      status: status,
+      precisaTrocarSenha: precisaTrocarSenha
     };
+
+    var token = criarSessao(idUsuario, perfilUsuario, precisaTrocarSenha);
 
     registrarLog('LOGIN', 'Usuário ' + usuarioEncontrado.nome + ' autenticado');
 
     return {
       success: true,
       usuario: usuarioEncontrado,
+      token: token,
+      precisaTrocarSenha: precisaTrocarSenha,
       linha: indiceLinhaUsuario + 2
     };
 
   } catch (error) {
     registrarLog('ERRO', 'Erro ao autenticar usuário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
+  }
+}
+
+function trocarSenha(dados) {
+  try {
+    var usuarioId = parseInt(sessaoUsuarioIdAtual, 10);
+    if (!usuarioId) {
+      return { success: false, error: 'Sessão inválida. Faça login novamente.' };
+    }
+
+    var senhaAtual = (dados.senhaAtual || '').toString();
+    var novaSenha = (dados.novaSenha || '').toString();
+
+    if (!novaSenha || novaSenha.trim().length < 6) {
+      return { success: false, error: 'A nova senha deve ter ao menos 6 caracteres.' };
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Usuários');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: false, error: 'Usuário não encontrado.' };
+    }
+
+    var estrutura = obterEstruturaPlanilha(sheet);
+    var totalColunas = estrutura.ultimaColuna || 11;
+    var valores = sheet.getRange(2, 1, sheet.getLastRow() - 1, totalColunas).getValues();
+    var usuario = obterUsuarioPorId(usuarioId, estrutura, valores);
+    if (!usuario) {
+      return { success: false, error: 'Usuário não encontrado.' };
+    }
+
+    var senhaArmazenada = (obterValorLinha(usuario.linha, estrutura, 'senha', '') || '').toString().trim();
+    if (!validarSenha(senhaAtual, senhaArmazenada)) {
+      return { success: false, error: 'Senha atual incorreta.' };
+    }
+
+    var linhaPlanilha = usuario.indice + 2;
+    var indiceSenha = obterIndiceColuna(estrutura, 'senha', null);
+    if (indiceSenha === null || indiceSenha === undefined) {
+      return { success: false, error: 'Não foi possível atualizar a senha.' };
+    }
+    sheet.getRange(linhaPlanilha, indiceSenha + 1).setValue(criarHashSenha(novaSenha.trim()));
+
+    var indiceFlag = obterIndiceColuna(estrutura, ['precisa trocar senha', 'precisatrocarsenha'], null);
+    if (indiceFlag !== null && indiceFlag !== undefined) {
+      sheet.getRange(linhaPlanilha, indiceFlag + 1).setValue('false');
+    }
+
+    atualizarFlagSenhaSessoes(usuarioId, false);
+    sessaoPrecisaTrocarSenha = false;
+
+    registrarLog('TROCA SENHA', 'Usuário id ' + usuarioId + ' trocou a senha');
+    return { success: true };
+
+  } catch (error) {
+    registrarLog('ERRO', 'Erro ao trocar senha: ' + error.toString());
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -3983,7 +4336,7 @@ function getHistorico(tipo) {
 
     } catch (error) {
       registrarLog('ERRO', `Erro ao buscar histórico: ${error.toString()}`);
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -4283,7 +4636,7 @@ function getCadastroArmarios() {
 
     } catch (error) {
       registrarLog('ERRO', `Erro ao buscar cadastro de armários: ${error.toString()}`);
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -4366,7 +4719,7 @@ function cadastrarArmarioFisico(armarioData) {
     
   } catch (error) {
     registrarLog('ERRO', `Erro ao cadastrar armário físico: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -4447,7 +4800,7 @@ function getUnidades() {
 
     } catch (error) {
       registrarLog('ERRO', `Erro ao buscar unidades: ${error.toString()}`);
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -4499,7 +4852,7 @@ function getSetores() {
 
     } catch (error) {
       registrarLog('ERRO', 'Erro ao buscar setores: ' + error.toString());
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -4543,7 +4896,7 @@ function cadastrarUnidade(dados) {
     
   } catch (error) {
     registrarLog('ERRO', `Erro ao cadastrar unidade: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -4581,7 +4934,7 @@ function alternarStatusUnidade(dados) {
     
   } catch (error) {
     registrarLog('ERRO', `Erro ao alternar status da unidade: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -4961,7 +5314,7 @@ function salvarTermoCompleto(dadosTermo) {
       dadosAcompanhantes = sheetAcompanhantes.getDataRange().getValues();
       for (var indiceA = 1; indiceA < dadosAcompanhantes.length; indiceA++) {
         var linha = dadosAcompanhantes[indiceA];
-        if (linha && linha[0] == dadosTermo.armarioId) {
+        if (linha && String(linha[0]).trim() === String(dadosTermo.armarioId).trim()) {
           linhaAcompanhante = indiceA;
           if (linha.length > 1 && linha[1]) {
             numeroArmarioOficial = linha[1];
@@ -4979,7 +5332,7 @@ function salvarTermoCompleto(dadosTermo) {
         var dadosVisitantes = sheetVisitantes.getDataRange().getValues();
         for (var indiceV = 1; indiceV < dadosVisitantes.length; indiceV++) {
           var linhaVisitante = dadosVisitantes[indiceV];
-          if (linhaVisitante && linhaVisitante[0] == dadosTermo.armarioId) {
+          if (linhaVisitante && String(linhaVisitante[0]).trim() === String(dadosTermo.armarioId).trim()) {
             if (linhaVisitante.length > 1 && linhaVisitante[1]) {
               numeroArmarioOficial = linhaVisitante[1];
             } else if (!numeroArmarioOficial) {
@@ -5174,7 +5527,7 @@ function salvarTermoCompleto(dadosTermo) {
 
   } catch (error) {
     registrarLog('ERRO_TERMO', `Erro ao salvar termo: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -5479,7 +5832,7 @@ function getTermo(dados) {
     
   } catch (error) {
     registrarLog('ERRO', `Erro ao buscar termo: ${error.toString()}`);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -5690,7 +6043,7 @@ function finalizarTermo(dados) {
 
   } catch (error) {
     registrarLog('ERRO_TERMO', 'Erro ao finalizar termo: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -5730,7 +6083,7 @@ function finalizarELiberarArmario(dados) {
 
   } catch (error) {
     registrarLog('ERRO', 'Erro ao finalizar e liberar armário: ' + error.toString());
-    return { success: false, etapa: 'finalizacao-liberacao', error: error.toString() };
+    return { success: false, etapa: 'finalizacao-liberacao', error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -5845,7 +6198,7 @@ function gerarESalvarTermoPDF(dadosTermo, opcoes) {
 
   } catch (error) {
     console.error('Erro ao gerar PDF:', error);
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -6142,7 +6495,7 @@ function gerarTermoPDFTemporario(dados) {
 
   } catch (error) {
     registrarLog('ERRO_TERMO', 'Erro ao gerar PDF temporário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -6184,7 +6537,7 @@ function excluirArquivoTemporario(dados) {
 
   } catch (error) {
     registrarLog('ERRO_TERMO', 'Erro ao excluir PDF temporário: ' + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -6526,7 +6879,7 @@ function getRegistrosImagens(dados) {
     return { success: true, data: registros };
   } catch (erroRegistros) {
     registrarLog('ERRO_IMAGEM', 'Erro ao buscar registros de imagens: ' + erroRegistros.toString());
-    return { success: false, error: erroRegistros.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -6879,7 +7232,7 @@ function getMovimentacoes(dados) {
 
     } catch (error) {
       registrarLog('ERRO', 'Erro ao buscar movimentações: ' + error.toString());
-      return { success: false, error: error.toString() };
+      return { success: false, error: 'Erro ao processar a solicitação.' };
     }
   });
 }
@@ -7181,7 +7534,7 @@ function salvarMovimentacao(dados) {
 
   } catch (error) {
     registrarLog('ERRO', "Erro ao salvar movimentação: " + error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7341,7 +7694,7 @@ function listarPertencesPerdidos() {
     return { success: true, dados: itens };
   } catch (erro) {
     registrarLog('ERRO', 'Erro ao listar pertences perdidos: ' + erro.toString());
-    return { success: false, error: erro.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7377,7 +7730,7 @@ function cadastrarPertencePerdido(parametros) {
     return { success: true };
   } catch (erro) {
     registrarLog('ERRO', 'Erro ao cadastrar pertence perdido: ' + erro.toString());
-    return { success: false, error: erro.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7422,7 +7775,7 @@ function atualizarPertencePerdido(parametros) {
     return { success: true };
   } catch (erro) {
     registrarLog('ERRO', 'Erro ao atualizar pertence perdido: ' + erro.toString());
-    return { success: false, error: erro.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7453,7 +7806,7 @@ function registrarContatoPertence(parametros) {
     return { success: true, historicoContato: novoHistorico };
   } catch (erro) {
     registrarLog('ERRO', 'Erro ao registrar contato de pertence: ' + erro.toString());
-    return { success: false, error: erro.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7476,7 +7829,7 @@ function excluirPertencePerdido(parametros) {
     return { success: true };
   } catch (erro) {
     registrarLog('ERRO', 'Erro ao excluir pertence perdido: ' + erro.toString());
-    return { success: false, error: erro.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7567,7 +7920,7 @@ function getLogs() {
     return { success: true, data: logs.reverse() }; // Mais recentes primeiro
     
   } catch (error) {
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7735,7 +8088,7 @@ function executarBackupSistema() {
     };
   } catch (error) {
     registrarLog('BACKUP_ERRO', error.toString());
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7800,7 +8153,7 @@ function getNotificacoes() {
     return { success: true, data: notificacoes };
 
   } catch (error) {
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 
@@ -7866,7 +8219,7 @@ function getEstatisticasDashboard(tipoUsuario) {
     return { success: true, data: estatisticas };
     
   } catch (error) {
-    return { success: false, error: error.toString() };
+    return { success: false, error: 'Erro ao processar a solicitação.' };
   }
 }
 

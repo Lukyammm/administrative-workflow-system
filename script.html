@@ -92,11 +92,43 @@
         const estadoVisualizadorImagem = { grupo: '', indice: 0 };
         const STORAGE_KEYS = {
             sessaoUsuario: 'locknac_sessao_usuario',
+            tokenSessao: 'locknac_token_sessao',
             rascunhoArmario: 'locknac_rascunho_armario',
             rascunhoTermo: 'locknac_rascunho_termo',
             preferenciasCabecalho: 'locknac_preferencias_cabecalho',
             tema: 'locknac_tema'
         };
+        let tokenSessao = '';
+        function definirTokenSessao(token) {
+            tokenSessao = token ? token.toString() : '';
+            const storage = obterArmazenamentoLocal();
+            if (!storage) return;
+            try {
+                if (tokenSessao) {
+                    storage.setItem(STORAGE_KEYS.tokenSessao, tokenSessao);
+                } else {
+                    storage.removeItem(STORAGE_KEYS.tokenSessao);
+                }
+            } catch (erro) {
+                console.warn('Não foi possível persistir o token de sessão:', erro);
+            }
+        }
+        function obterTokenSessao() {
+            if (tokenSessao) {
+                return tokenSessao;
+            }
+            const storage = obterArmazenamentoLocal();
+            if (!storage) return '';
+            try {
+                tokenSessao = storage.getItem(STORAGE_KEYS.tokenSessao) || '';
+            } catch (erro) {
+                tokenSessao = '';
+            }
+            return tokenSessao;
+        }
+        function limparTokenSessao() {
+            definirTokenSessao('');
+        }
         const CAMADAS = {
             modal: 850,
             dropdown: 920,
@@ -1076,8 +1108,12 @@
                 const acoes = this.clonarAcoesInterativas(celula);
                 if (acoes) {
                     valor.appendChild(acoes);
+                } else if (celula && celula.childNodes && celula.childNodes.length) {
+                    // Clona os nós já renderizados (sem re-parsear HTML), evitando XSS
+                    // por reinterpretação de conteúdo vindo de dados do usuário.
+                    celula.childNodes.forEach(node => valor.appendChild(node.cloneNode(true)));
                 } else {
-                    valor.innerHTML = celula?.innerHTML?.trim() || this.extrairTextoCelula(celula) || '-';
+                    valor.textContent = this.extrairTextoCelula(celula) || '-';
                 }
                 detalhe.appendChild(label);
                 detalhe.appendChild(valor);
@@ -2224,10 +2260,13 @@
                 ? opcoes.intervaloInicial
                 : 400;
             const payload = { ...(data || {}) };
-            if (!Object.prototype.hasOwnProperty.call(payload, 'usuarioId')) {
-                const usuarioAtual = obterUsuarioAutenticado();
-                if (usuarioAtual && usuarioAtual.id !== undefined && usuarioAtual.id !== null) {
-                    payload.usuarioId = usuarioAtual.id;
+            // Autorização é feita server-side via token de sessão (o usuarioId do
+            // cliente não é mais confiável e foi removido).
+            delete payload.usuarioId;
+            if (!Object.prototype.hasOwnProperty.call(payload, 'token')) {
+                const token = obterTokenSessao();
+                if (token) {
+                    payload.token = token;
                 }
             }
             if (!Object.prototype.hasOwnProperty.call(payload, 'usuarioResponsavel')) {
@@ -2306,6 +2345,7 @@
                         if (!acoesLeituraComCache.has(action) && resposta && resposta.success) {
                             limparCacheLeiturasCliente();
                         }
+                        tratarRespostaSessao(resposta, action);
                         return resposta;
                     } catch (parseError) {
                         console.error(`Falha ao interpretar a resposta da ação ${action}:`, parseError, textoResposta);
@@ -2327,6 +2367,7 @@
                             if (!acoesLeituraComCache.has(action) && respostaNativa && respostaNativa.success) {
                                 limparCacheLeiturasCliente();
                             }
+                            tratarRespostaSessao(respostaNativa, action);
                             return respostaNativa;
                         } catch (erroNativo) {
                             const mensagemUsuario = erroNativo && erroNativo.mensagemUsuario
@@ -2395,7 +2436,8 @@
             }
             loginInicializado = true;
             const sessaoRestaurada = restaurarSessaoUsuario();
-            if (sessaoRestaurada && !estado.autenticado) {
+            // Só restaura a sessão se ainda houver um token; o servidor revalida a cada ação.
+            if (sessaoRestaurada && obterTokenSessao() && !estado.autenticado) {
                 const usuarioRestaurado = {
                     ...sessaoRestaurada
                 };
@@ -2436,6 +2478,7 @@
                         atualizarFeedbackLogin('error', resultado.error || 'Credenciais inválidas.');
                         return;
                     }
+                    definirTokenSessao(resultado.token || '');
                     const usuarioAutenticado = resultado.usuario || {};
                     usuarioAutenticado.perfil = (usuarioAutenticado.perfil || 'usuario').toString().trim().toLowerCase();
                     usuarioAutenticado.unidades = normalizarListaDeUnidades(usuarioAutenticado.unidades);
@@ -2452,6 +2495,10 @@
                     }
                     atualizarCabecalhoUsuario();
                     aplicarPermissoesMenu();
+                    if (resultado.precisaTrocarSenha) {
+                        // Bloqueia o uso até a troca da senha provisória.
+                        await solicitarTrocaSenha();
+                    }
                     await inicializarAplicacao();
                 } catch (error) {
                     console.error('Erro ao autenticar usuário:', error);
@@ -2461,7 +2508,98 @@
                 }
             });
         }
+        let tratandoSessaoInvalida = false;
+        let trocaSenhaAberta = false;
+        function tratarRespostaSessao(resposta, action) {
+            if (!resposta || resposta.success) {
+                return;
+            }
+            if (resposta.motivo === 'SESSAO_INVALIDA') {
+                if (tratandoSessaoInvalida) {
+                    return;
+                }
+                tratandoSessaoInvalida = true;
+                limparTokenSessao();
+                realizarLogout();
+                Swal.fire({
+                    title: 'Sessão expirada',
+                    text: 'Sua sessão expirou. Faça login novamente.',
+                    icon: 'warning',
+                    confirmButtonText: 'OK'
+                }).finally(() => {
+                    tratandoSessaoInvalida = false;
+                });
+            } else if (resposta.motivo === 'SENHA_EXPIRADA') {
+                solicitarTrocaSenha();
+            }
+        }
+        async function solicitarTrocaSenha() {
+            if (trocaSenhaAberta) {
+                return;
+            }
+            trocaSenhaAberta = true;
+            try {
+                const { value: formValues } = await Swal.fire({
+                    title: 'Trocar senha',
+                    html: '<input id="swal-senha-atual" type="password" class="swal2-input" placeholder="Senha atual">' +
+                          '<input id="swal-nova-senha" type="password" class="swal2-input" placeholder="Nova senha (mín. 6 caracteres)">' +
+                          '<input id="swal-confirma-senha" type="password" class="swal2-input" placeholder="Confirmar nova senha">',
+                    focusConfirm: false,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showCancelButton: false,
+                    confirmButtonText: 'Salvar',
+                    preConfirm: () => {
+                        const atual = document.getElementById('swal-senha-atual').value;
+                        const nova = document.getElementById('swal-nova-senha').value;
+                        const confirma = document.getElementById('swal-confirma-senha').value;
+                        if (!atual || !nova) {
+                            Swal.showValidationMessage('Preencha todos os campos.');
+                            return false;
+                        }
+                        if (nova.length < 6) {
+                            Swal.showValidationMessage('A nova senha deve ter ao menos 6 caracteres.');
+                            return false;
+                        }
+                        if (nova !== confirma) {
+                            Swal.showValidationMessage('As senhas não conferem.');
+                            return false;
+                        }
+                        return { atual, nova };
+                    }
+                });
+                if (!formValues) {
+                    return;
+                }
+                const resultado = await callGoogleScript('trocarSenha', {
+                    senhaAtual: formValues.atual,
+                    novaSenha: formValues.nova
+                });
+                if (resultado && resultado.success) {
+                    if (estado.usuarioAutenticado) {
+                        estado.usuarioAutenticado.precisaTrocarSenha = false;
+                        persistirSessaoAtual();
+                    }
+                    mostrarSucesso('Senha alterada com sucesso.');
+                } else {
+                    notificarErroPadrao(resultado, 'Não foi possível alterar a senha.');
+                    trocaSenhaAberta = false;
+                    solicitarTrocaSenha();
+                }
+            } finally {
+                trocaSenhaAberta = false;
+            }
+        }
         function realizarLogout() {
+            const tokenAtual = obterTokenSessao();
+            if (tokenAtual) {
+                try {
+                    callGoogleScript('encerrarSessao', { token: tokenAtual }).catch(() => {});
+                } catch (erro) {
+                    // Ignora falha ao encerrar sessão remota.
+                }
+            }
+            limparTokenSessao();
             estado = criarEstadoInicial();
             aplicacaoInicializada = false;
             limparSessaoUsuario();
