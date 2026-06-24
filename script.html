@@ -9514,12 +9514,18 @@
 
             const botaoRemover = document.createElement('button');
             botaoRemover.type = 'button';
-            botaoRemover.className = 'icon-btn';
+            botaoRemover.className = 'icon-btn mov-saida-definir';
             botaoRemover.title = 'Definir a quantidade a retirar';
-            botaoRemover.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
+            botaoRemover.setAttribute('aria-label', `Definir a quantidade a retirar de ${item.descricao || 'item'}`);
+            botaoRemover.innerHTML = '<i class="fas fa-arrow-up-from-bracket" aria-hidden="true"></i>';
             botaoRemover.addEventListener('click', async () => {
                 const quantidadeTotal = Number(linha.dataset.quantidade) || 0;
                 const removerAtual = Number(linha.dataset.removerQuantidade) || 0;
+                const descricaoItem = (linha.dataset.descricao || 'Item')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
 
                 if (quantidadeTotal <= 0) return;
 
@@ -9528,22 +9534,50 @@
                     backdrop: false,
                     heightAuto: false,
                     zIndex: CAMADAS.alert,
-                    title: 'Definir quantidade para retirar',
-                    html: `<p class="swal-helper-text">Disponível: <strong>${quantidadeTotal}</strong> volume(s).</p>`,
-                    input: 'number',
-                    inputLabel: 'Quantidade que sairá',
-                    inputAttributes: {
-                        min: 1,
-                        max: quantidadeTotal,
-                        step: 1
-                    },
-                    inputValue: removerAtual > 0 ? removerAtual : 1,
+                    title: 'Quantidade a retirar',
+                    html: `
+                        <div class="modal-transfer">
+                            <div class="modal-transfer-header">
+                                <div class="modal-transfer-icon" aria-hidden="true"><i class="fas fa-arrow-up-from-bracket"></i></div>
+                                <div class="modal-transfer-text">
+                                    <p class="modal-transfer-title">${descricaoItem}</p>
+                                    <p class="modal-transfer-subtitle">Disponível: <strong>${quantidadeTotal}</strong> volume(s). Informe quantos serão retirados.</p>
+                                </div>
+                            </div>
+                            <div class="modal-transfer-fields">
+                                <div class="swal-form-group modal-transfer-group">
+                                    <label class="modal-transfer-label" for="mov-saida-qtd-retirar">Quantidade que sairá</label>
+                                    <div class="modal-transfer-input">
+                                        <i class="fas fa-hashtag" aria-hidden="true"></i>
+                                        <input type="number" id="mov-saida-qtd-retirar" class="modal-transfer-field" min="1" max="${quantidadeTotal}" step="1" value="${removerAtual > 0 ? removerAtual : 1}" inputmode="numeric">
+                                    </div>
+                                    <p class="modal-transfer-hint">Use “Limpar seleção” para cancelar a retirada deste item.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `,
+                    focusConfirm: false,
                     confirmButtonText: 'Aplicar retirada',
                     cancelButtonText: 'Cancelar',
                     denyButtonText: 'Limpar seleção',
                     showDenyButton: true,
                     showCancelButton: true,
-                    preConfirm: (valor) => {
+                    buttonsStyling: false,
+                    customClass: {
+                        popup: 'modal-transfer-popup',
+                        confirmButton: 'modal-transfer-confirm',
+                        denyButton: 'modal-transfer-deny',
+                        cancelButton: 'modal-transfer-cancel'
+                    },
+                    didOpen: () => {
+                        const input = Swal.getPopup()?.querySelector('#mov-saida-qtd-retirar');
+                        if (input) {
+                            input.focus();
+                            input.select();
+                        }
+                    },
+                    preConfirm: () => {
+                        const valor = Swal.getPopup()?.querySelector('#mov-saida-qtd-retirar')?.value;
                         const numero = Number(valor);
                         if (!Number.isFinite(numero) || numero <= 0) {
                             Swal.showValidationMessage('Informe um número maior que zero.');

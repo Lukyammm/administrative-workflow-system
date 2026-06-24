@@ -1634,6 +1634,23 @@
             background: color-mix(in srgb, var(--light-color) 85%, white 15%) !important;
         }
 
+        .modal-transfer-deny {
+            border-radius: 12px !important;
+            padding: 11px 18px !important;
+            font-weight: 700;
+            font-size: 0.95rem;
+            min-width: 120px;
+            background: color-mix(in srgb, var(--danger-color, #d64545) 12%, white 88%) !important;
+            color: color-mix(in srgb, var(--danger-dark, #9a2222) 85%, black 15%) !important;
+            border: 1px solid color-mix(in srgb, var(--danger-color, #d64545) 35%, transparent) !important;
+            box-shadow: none !important;
+        }
+
+        .modal-transfer-deny:hover,
+        .modal-transfer-deny:focus-visible {
+            background: color-mix(in srgb, var(--danger-color, #d64545) 18%, white 82%) !important;
+        }
+
         .swal-form-grid {
             display: flex;
             flex-direction: column;
@@ -5380,6 +5397,17 @@
             .mov-modal-grid {
                 grid-template-columns: 1fr;
             }
+            /* No mobile, mantém o fluxo principal contínuo:
+               operações -> assinatura/confirmar -> informações de apoio. */
+            .mov-card-operations {
+                order: 1;
+            }
+            .mov-signature-wrapper {
+                order: 2;
+            }
+            .mov-card-info {
+                order: 3;
+            }
         }
         @media (max-width: 860px) {
             .mov-modal-hero {
@@ -5419,6 +5447,37 @@
                 flex-direction: column;
                 gap: 4px;
                 font-size: 0.88rem;
+            }
+        }
+        /* Destaca o botão de retirada como ação (e não como excluir). */
+        .movimentacao-item-row.readonly .mov-saida-definir {
+            width: 40px;
+            height: 40px;
+            border-style: solid;
+            border-color: color-mix(in srgb, var(--primary-color) 32%, transparent);
+            color: var(--primary-color);
+            background: color-mix(in srgb, var(--primary-color) 8%, var(--surface-color));
+        }
+        .movimentacao-item-row.readonly.marcado-remocao .mov-saida-definir {
+            border-color: color-mix(in srgb, var(--danger-color) 42%, transparent);
+            color: var(--danger-dark);
+            background: color-mix(in srgb, var(--danger-color) 10%, var(--surface-color));
+        }
+        /* Aproveita melhor a largura do modal de movimentações em telas pequenas. */
+        @media (max-width: 600px) {
+            #movimentacao-modal {
+                padding: 10px;
+            }
+            #movimentacao-modal.modal-large .modal-content {
+                width: calc(100vw - 20px);
+                max-width: calc(100vw - 20px);
+                max-height: calc(100vh - 20px);
+            }
+            #movimentacao-modal .modal-body {
+                padding: 14px;
+            }
+            #movimentacao-modal .mov-card {
+                padding: 13px;
             }
         }
         .form-inline-actions {
