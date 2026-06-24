@@ -4847,6 +4847,224 @@
         #movimentacao-modal .modal-body {
             padding: clamp(16px, 2vw, 24px);
         }
+        /* === Wizard de movimentação (fluxo guiado em etapas) === */
+        #movimentacao-modal .modal-content.mov-wizard {
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .mov-wizard-head {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+        .mov-wizard-progress {
+            width: 100%;
+            max-width: 320px;
+        }
+        .mov-step {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            animation: movStepFade 0.25s ease;
+        }
+        .mov-step.active {
+            display: flex;
+        }
+        @keyframes movStepFade {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .mov-step-intro {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .mov-step-title {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .mov-step-intro .helper-text {
+            margin: 0;
+        }
+        /* Etapa 1 — escolha do tipo */
+        .mov-choice {
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+        .mov-choice .mov-tab {
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+            gap: 6px;
+            min-height: 120px;
+            padding: 20px 18px;
+            justify-content: center;
+        }
+        .mov-choice .mov-tab i {
+            font-size: 1.4rem;
+        }
+        .mov-choice-label {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+        .mov-choice-sub {
+            font-size: 0.85rem;
+            font-weight: 500;
+            opacity: 0.82;
+        }
+        /* Seções recolhidas (histórico, detalhes, editar data/hora) */
+        .mov-collapse {
+            border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--surface-color) 97%, var(--primary-color) 3%);
+            overflow: hidden;
+        }
+        .mov-collapse > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 12px 14px;
+            font-weight: 600;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mov-collapse > summary::-webkit-details-marker {
+            display: none;
+        }
+        .mov-collapse > summary::before {
+            content: "\25B8";
+            color: var(--muted-color);
+            font-size: 0.9rem;
+            transition: transform 0.2s ease;
+        }
+        .mov-collapse[open] > summary::before {
+            transform: rotate(90deg);
+        }
+        .mov-collapse[open] > summary {
+            border-bottom: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+        }
+        .mov-collapse > *:not(summary) {
+            padding: 12px 14px;
+        }
+        .mov-meta-row.mov-meta-edit {
+            grid-template-columns: 1fr 1fr;
+            margin-bottom: 0;
+        }
+        /* Etapa 3 — revisão */
+        .mov-review {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+            border-radius: 14px;
+            padding: 18px;
+            background: var(--surface-color);
+        }
+        .mov-review-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px 18px;
+        }
+        .mov-review-line {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .mov-review-line span,
+        .mov-review-section-title {
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted-color);
+        }
+        .mov-review-line strong {
+            font-size: 0.98rem;
+            color: var(--text-color);
+        }
+        .mov-review-section-title {
+            display: block;
+            margin-bottom: 6px;
+        }
+        .mov-review-itens {
+            margin: 0;
+            padding-left: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            color: var(--text-color);
+        }
+        .mov-review-empty {
+            margin: 0;
+            color: var(--muted-color);
+        }
+        .mov-review-obs p {
+            margin: 0;
+            color: var(--text-color);
+        }
+        /* Etapa 4 — assinatura */
+        .mov-sign-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--primary-color) 6%, var(--surface-color));
+            border: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+        }
+        .mov-sign-summary strong {
+            color: var(--text-color);
+        }
+        .mov-sign-summary span {
+            color: var(--muted-color);
+            font-size: 0.9rem;
+        }
+        .mov-itens-empty {
+            color: var(--muted-color);
+        }
+        /* Rodapé fixo de ações */
+        .mov-wizard-actions {
+            flex-shrink: 0;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+        }
+        .mov-wizard-actions-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+        .mov-footer-status {
+            font-size: 0.88rem;
+            color: var(--muted-color);
+            margin-right: 4px;
+        }
+        @media (max-width: 560px) {
+            .mov-choice {
+                grid-template-columns: 1fr;
+            }
+            .mov-choice .mov-tab {
+                min-height: 84px;
+            }
+            .mov-review-grid,
+            .mov-meta-row.mov-meta-edit {
+                grid-template-columns: 1fr;
+            }
+            .mov-wizard-actions-right {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+            .mov-wizard-actions-right .btn {
+                flex: 1;
+            }
+        }
         .mov-modal-grid {
             display: grid;
             grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);

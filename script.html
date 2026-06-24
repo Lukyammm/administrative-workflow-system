@@ -764,6 +764,15 @@
             movSignatureField: document.getElementById('mov-signature-field'),
             movData: document.getElementById('mov-data'),
             movHora: document.getElementById('mov-hora'),
+            movSteps: Array.from(document.querySelectorAll('#movimentacao-form .mov-step')),
+            movProgress: document.getElementById('mov-progress'),
+            movProgressLabel: document.getElementById('mov-progress-label'),
+            movBtnVoltar: document.getElementById('mov-btn-voltar'),
+            movBtnAvancar: document.getElementById('mov-btn-avancar'),
+            movBtnCancelar: document.getElementById('mov-btn-cancelar'),
+            movFooterStatus: document.getElementById('mov-footer-status'),
+            movReview: document.getElementById('mov-review'),
+            movSignSummary: document.getElementById('mov-sign-summary'),
             btnNovaUnidade: document.getElementById('btn-nova-unidade'),
             tabelaUnidades: document.getElementById('tabela-unidades'),
             tabelaUnidadesBody: document.querySelector('#tabela-unidades tbody'),
@@ -2027,6 +2036,7 @@
         let movimentacaoInventarioAtual = [];
         let movimentacaoVolumesBase = [];
         let movimentacoesRegistradas = [];
+        let movPassoAtual = 0;
         let movEntradaDescricaoUltimoValor = '';
         let termoAssinaturaDesenhada = false;
         let termoDesenhandoAssinatura = false;
@@ -3755,22 +3765,36 @@
             elementos.movimentacaoModalClose.addEventListener('click', fecharMovimentacaoModal);
             elementos.movimentacaoForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
-                const botao = elementos.movimentacaoForm.querySelector('button[type="submit"]');
-                const finalizarLoading = iniciarLoadingBotao(botao);
-                try {
-                    await salvarMovimentacao();
-                } finally {
-                    finalizarLoading();
-                }
+                await avancarOuConfirmarMovimentacao();
             });
+            elementos.movBtnAvancar?.addEventListener('click', avancarOuConfirmarMovimentacao);
+            elementos.movBtnVoltar?.addEventListener('click', () => navegarPassoMovimentacao(-1));
+            elementos.movBtnCancelar?.addEventListener('click', fecharMovimentacaoModal);
             elementos.movTabs?.forEach(tab => {
-                tab.addEventListener('click', () => ativarAbaMovimentacao(tab.dataset.movTab));
+                tab.addEventListener('click', () => {
+                    const tipoEscolhido = tab.dataset.movTab;
+                    if (normalizarTexto(tipoEscolhido) !== normalizarTexto(elementos.movTipo?.value)) {
+                        ativarAbaMovimentacao(tipoEscolhido);
+                    }
+                    mostrarPassoMovimentacao(1);
+                });
             });
             elementos.movEntradaAdicionar?.addEventListener('click', adicionarItemEntradaRapido);
             elementos.movEntradaDescricao?.addEventListener('input', atualizarUltimaDescricaoEntrada);
             elementos.movEntradaDescricao?.addEventListener('change', atualizarUltimaDescricaoEntrada);
             elementos.movEntradaDescricao?.addEventListener('blur', adicionarItemEntradaAoPerderFoco);
-            elementos.movSaidaPreencher?.addEventListener('click', () => preencherItensMovimentacaoAPartirInventario('saida'));
+            [elementos.movEntradaDescricao, elementos.movEntradaQuantidade].forEach(campo => {
+                campo?.addEventListener('keydown', evento => {
+                    if (evento.key === 'Enter') {
+                        evento.preventDefault();
+                        adicionarItemEntradaRapido();
+                    }
+                });
+            });
+            elementos.movSaidaPreencher?.addEventListener('click', () => {
+                preencherItensMovimentacaoAPartirInventario('saida');
+                atualizarContadorItensMovimentacao();
+            });
             elementos.movSaidaAddPersonalizado?.addEventListener('click', adicionarItemSaidaNaoCadastrado);
             if (elementos.impressaoReservaClose) {
                 elementos.impressaoReservaClose.addEventListener('click', () => fecharModalImpressaoReserva());
@@ -9470,7 +9494,10 @@
             botaoRemover.className = 'btn btn-ghost btn-danger-outline mov-remover-item';
             botaoRemover.innerHTML = '<i class="fas fa-trash-alt" aria-hidden="true"></i><span>Remover</span>';
             botaoRemover.title = 'Remover este item';
-            botaoRemover.addEventListener('click', () => linha.remove());
+            botaoRemover.addEventListener('click', () => {
+                linha.remove();
+                atualizarContadorItensMovimentacao();
+            });
 
             const acoesWrapper = document.createElement('div');
             acoesWrapper.className = 'mov-item-actions';
@@ -9603,6 +9630,7 @@
                     atualizarIndicadorRemocao(linha);
                     botaoRemover.title = 'Definir a quantidade a retirar';
                 }
+                atualizarContadorItensMovimentacao();
             });
             acoesWrapper.appendChild(botaoRemover);
 
@@ -9663,8 +9691,8 @@
 
             if (tipoNormalizado === 'entrada') {
                 const vazio = document.createElement('div');
-                vazio.className = 'info-box info-compact';
-                vazio.textContent = 'Os itens que você adicionar aparecem aqui.';
+                vazio.className = 'info-box info-compact mov-itens-empty';
+                vazio.textContent = 'Nenhum item adicionado ainda.';
                 elementos.movItensList?.appendChild(vazio);
                 return;
             }
@@ -9730,13 +9758,13 @@
                 entrada: {
                     label: 'Observações (opcional)',
                     placeholder: 'Algo a registrar sobre a entrada? (opcional)',
-                    helper: 'Confira a lista de itens antes de confirmar.',
+                    helper: 'Adicione os itens que serão guardados.',
                     pill: 'Entrada'
                 },
                 saida: {
                     label: 'Observações (opcional)',
                     placeholder: 'Algo a registrar sobre a retirada? (opcional)',
-                    helper: 'Toque no item para definir a quantidade que sairá.',
+                    helper: 'Toque em um item para definir quanto será retirado.',
                     pill: 'Saída'
                 }
             };
@@ -9835,6 +9863,7 @@
             elementos.movEntradaQuantidade.value = '';
             elementos.movEntradaDescricao.value = '';
             movEntradaDescricaoUltimoValor = '';
+            atualizarContadorItensMovimentacao();
             elementos.movEntradaQuantidade.focus();
         }
         function adicionarItemEntradaAoPerderFoco(evento) {
@@ -9917,7 +9946,176 @@
             });
             if (resultado.isConfirmed && resultado.value) {
                 criarLinhaSaida(resultado.value, 'novo');
+                atualizarContadorItensMovimentacao();
             }
+        }
+        function escaparHtmlMovimentacao(texto) {
+            return String(texto ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+        function totalEtapasMovimentacao() {
+            return elementos.movSteps?.length || 0;
+        }
+        function atualizarContadorItensMovimentacao() {
+            if (movPassoAtual === 1) {
+                atualizarRodapeMovimentacao(1);
+            }
+        }
+        function atualizarRodapeMovimentacao(indice) {
+            const totalEtapas = totalEtapasMovimentacao();
+            if (!totalEtapas) return;
+            const primeiro = indice === 0;
+            const ultimo = indice === totalEtapas - 1;
+            if (elementos.movBtnVoltar) {
+                elementos.movBtnVoltar.classList.toggle('hidden', primeiro);
+            }
+            if (elementos.movBtnAvancar) {
+                elementos.movBtnAvancar.classList.toggle('hidden', primeiro);
+                if (ultimo) {
+                    elementos.movBtnAvancar.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i> Confirmar movimentação';
+                } else if (indice === 2) {
+                    elementos.movBtnAvancar.textContent = 'Continuar para assinatura';
+                } else {
+                    elementos.movBtnAvancar.textContent = 'Continuar';
+                }
+            }
+            if (elementos.movFooterStatus) {
+                if (indice === 1) {
+                    const qtd = obterItensMovimentacaoFormulario().length;
+                    elementos.movFooterStatus.textContent = qtd
+                        ? `${qtd} ${qtd === 1 ? 'item adicionado' : 'itens adicionados'}`
+                        : 'Nenhum item adicionado';
+                    elementos.movFooterStatus.classList.remove('hidden');
+                } else {
+                    elementos.movFooterStatus.classList.add('hidden');
+                }
+            }
+        }
+        function mostrarPassoMovimentacao(indice) {
+            const totalEtapas = totalEtapasMovimentacao();
+            if (!totalEtapas) return;
+            const alvo = Math.max(0, Math.min(indice, totalEtapas - 1));
+            elementos.movSteps.forEach((step, idx) => step.classList.toggle('active', idx === alvo));
+            movPassoAtual = alvo;
+            if (alvo === 2) {
+                montarResumoMovimentacao();
+            }
+            if (alvo === 3) {
+                montarResumoAssinaturaMovimentacao();
+                requestAnimationFrame(() => inicializarCanvasAssinatura());
+            }
+            atualizarRodapeMovimentacao(alvo);
+            const progresso = ((alvo + 1) / totalEtapas) * 100;
+            if (elementos.movProgress) {
+                elementos.movProgress.style.width = `${progresso}%`;
+            }
+            if (elementos.movProgressLabel) {
+                elementos.movProgressLabel.textContent = `Passo ${alvo + 1} de ${totalEtapas}`;
+            }
+            const corpo = elementos.movimentacaoModal?.querySelector('.modal-body');
+            if (corpo) {
+                corpo.scrollTop = 0;
+            }
+        }
+        function navegarPassoMovimentacao(delta) {
+            mostrarPassoMovimentacao(movPassoAtual + delta);
+        }
+        function validarPassoMovimentacao(indice) {
+            const tipo = normalizarTexto(elementos.movTipo?.value);
+            if (indice === 0) {
+                if (!tipo) {
+                    mostrarErro('Selecione o tipo de movimentação.');
+                    return false;
+                }
+                return true;
+            }
+            if (indice === 1) {
+                const itens = obterItensMovimentacaoFormulario();
+                if (!itens.length) {
+                    mostrarErro(tipo === 'saida'
+                        ? 'Selecione ao menos um item e informe a quantidade que será retirada.'
+                        : 'Adicione ao menos um item a esta movimentação.');
+                    return false;
+                }
+                if (tipo === 'saida') {
+                    const linhas = Array.from(elementos.movItensList?.querySelectorAll('.movimentacao-item-row') || []);
+                    const marcadasSemFoto = linhas.some(linha => Number(linha.dataset.removerQuantidade) > 0 && !linha.dataset.fotoBase64);
+                    if (marcadasSemFoto) {
+                        mostrarErro('Inclua a foto de cada volume que será retirado.');
+                        return false;
+                    }
+                } else if (itens.some(item => !item.fotoBase64)) {
+                    mostrarErro('Inclua a foto de cada volume listado antes de continuar.');
+                    return false;
+                }
+                return true;
+            }
+            if (indice === 3 && !movAssinaturaDesenhada) {
+                mostrarErro('Colha a assinatura do responsável para registrar a movimentação.');
+                elementos.movSignatureField?.classList.add('invalid');
+                return false;
+            }
+            return true;
+        }
+        async function avancarOuConfirmarMovimentacao() {
+            const totalEtapas = totalEtapasMovimentacao();
+            if (!totalEtapas) return;
+            if (!validarPassoMovimentacao(movPassoAtual)) return;
+            if (movPassoAtual < totalEtapas - 1) {
+                mostrarPassoMovimentacao(movPassoAtual + 1);
+                return;
+            }
+            const finalizar = iniciarLoadingBotao(elementos.movBtnAvancar);
+            try {
+                await salvarMovimentacao();
+            } finally {
+                finalizar();
+            }
+        }
+        function montarResumoMovimentacao() {
+            if (!elementos.movReview) return;
+            const armario = obterArmarioPorId(movimentacaoArmarioAtual);
+            const tipo = normalizarTexto(elementos.movTipo?.value);
+            const tipoLabel = tipo === 'entrada' ? 'Entrada (guardar)' : tipo === 'saida' ? 'Saída (retirar)' : '-';
+            const itens = obterItensMovimentacaoFormulario();
+            const responsavel = obterDescricaoResponsavelAtual() || 'Não identificado';
+            const dataTexto = elementos.movData?.value
+                ? elementos.movData.value.split('-').reverse().join('/')
+                : '-';
+            const horaTexto = elementos.movHora?.value || '-';
+            const observacao = elementos.movObservacao?.value?.trim();
+            const itensHtml = itens.length
+                ? `<ul class="mov-review-itens">${itens.map(item => `<li><strong>${Number(item.quantidade)}x</strong> ${escaparHtmlMovimentacao(item.descricao)}</li>`).join('')}</ul>`
+                : '<p class="mov-review-empty">Nenhum item adicionado.</p>';
+            elementos.movReview.innerHTML = `
+                <div class="mov-review-grid">
+                    <div class="mov-review-line"><span>Armário</span><strong>${escaparHtmlMovimentacao(armario?.numero || '-')}</strong></div>
+                    <div class="mov-review-line"><span>Tipo</span><strong>${tipoLabel}</strong></div>
+                    <div class="mov-review-line"><span>Responsável</span><strong>${escaparHtmlMovimentacao(responsavel)}</strong></div>
+                    <div class="mov-review-line"><span>Data/hora</span><strong>${dataTexto} às ${horaTexto}</strong></div>
+                </div>
+                <div class="mov-review-itens-wrap">
+                    <span class="mov-review-section-title">Itens</span>
+                    ${itensHtml}
+                </div>
+                ${observacao ? `<div class="mov-review-obs"><span class="mov-review-section-title">Observações</span><p>${escaparHtmlMovimentacao(observacao)}</p></div>` : ''}
+            `;
+        }
+        function montarResumoAssinaturaMovimentacao() {
+            if (!elementos.movSignSummary) return;
+            const armario = obterArmarioPorId(movimentacaoArmarioAtual);
+            const tipo = normalizarTexto(elementos.movTipo?.value);
+            const tipoLabel = tipo === 'entrada' ? 'Entrada' : tipo === 'saida' ? 'Saída' : 'Movimentação';
+            const itens = obterItensMovimentacaoFormulario();
+            const itensTexto = itens.map(item => `${Number(item.quantidade)}x ${item.descricao}`).join(', ');
+            elementos.movSignSummary.innerHTML = `
+                <strong>${tipoLabel} no Armário ${escaparHtmlMovimentacao(armario?.numero || '-')}</strong>
+                <span>${escaparHtmlMovimentacao(itensTexto) || 'Sem itens'}</span>
+            `;
         }
         async function abrirMovimentacoes(id) {
             garantirPortaisCabecalho();
@@ -9940,6 +10138,7 @@
             movimentacaoVolumesBase = [];
             movimentacoesRegistradas = [];
             ativarAbaMovimentacao('');
+            mostrarPassoMovimentacao(0);
             if (elementos.movimentacaoModal.style.display !== 'flex') {
                 travaRolagem.aplicar();
             }
@@ -10325,7 +10524,7 @@
                     mostrarSucesso('Movimentação registrada com sucesso');
                     reproduzirSomMovimentacao('sucesso');
                     elementos.movimentacaoForm.reset();
-                    elementos.movTipo.value = tipoSelecionado;
+                    elementos.movTipo.value = '';
                     if (elementos.movObservacao) {
                         elementos.movObservacao.value = '';
                     }
@@ -10335,7 +10534,8 @@
                     const padraoLocal = obterDataHoraLocalPadrao();
                     elementos.movData.value = padraoLocal.data;
                     elementos.movHora.value = padraoLocal.hora;
-                    ativarAbaMovimentacao(tipoSelecionado);
+                    ativarAbaMovimentacao('');
+                    mostrarPassoMovimentacao(0);
                 } else {
                     notificarErroPadrao(resultado);
                 }
