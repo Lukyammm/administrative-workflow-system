@@ -9820,13 +9820,31 @@
         }
         async function adicionarItemSaidaNaoCadastrado() {
             const html = `
-                <div class="form-group">
-                    <label for="saida-novo-qtd">Quantidade</label>
-                    <input type="number" id="saida-novo-qtd" min="1" step="1" class="swal2-input" placeholder="0">
-                </div>
-                <div class="form-group">
-                    <label for="saida-novo-desc">Descrição</label>
-                    <input type="text" id="saida-novo-desc" list="termo-itens-sugestoes" class="swal2-input" placeholder="Digite ou escolha na lista">
+                <div class="modal-transfer">
+                    <div class="modal-transfer-header">
+                        <div class="modal-transfer-icon" aria-hidden="true"><i class="fas fa-box-open"></i></div>
+                        <div class="modal-transfer-text">
+                            <p class="modal-transfer-title">Registrar saída avulsa</p>
+                            <p class="modal-transfer-subtitle">Informe um item que não estava cadastrado no armário para registrar a retirada.</p>
+                        </div>
+                    </div>
+                    <div class="modal-transfer-fields">
+                        <div class="swal-form-group modal-transfer-group">
+                            <label class="modal-transfer-label" for="saida-novo-desc">Descrição do item</label>
+                            <div class="modal-transfer-input">
+                                <i class="fas fa-tag" aria-hidden="true"></i>
+                                <input type="text" id="saida-novo-desc" list="termo-itens-sugestoes" class="modal-transfer-field" placeholder="Ex.: guarda-chuva, sacola, documento...">
+                            </div>
+                            <p class="modal-transfer-hint">Digite ou escolha uma sugestão da lista.</p>
+                        </div>
+                        <div class="swal-form-group modal-transfer-group">
+                            <label class="modal-transfer-label" for="saida-novo-qtd">Quantidade</label>
+                            <div class="modal-transfer-input">
+                                <i class="fas fa-hashtag" aria-hidden="true"></i>
+                                <input type="number" id="saida-novo-qtd" min="1" step="1" class="modal-transfer-field" placeholder="1">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
             const resultado = await Swal.fire({
@@ -9834,12 +9852,21 @@
                 backdrop: false,
                 heightAuto: false,
                 zIndex: CAMADAS.alert,
-                title: 'Registrar saída de item não cadastrado',
+                title: 'Item fora da lista',
                 html,
                 focusConfirm: false,
                 showCancelButton: true,
                 confirmButtonText: 'Registrar saída',
                 cancelButtonText: 'Cancelar',
+                buttonsStyling: false,
+                customClass: {
+                    popup: 'modal-transfer-popup',
+                    confirmButton: 'modal-transfer-confirm',
+                    cancelButton: 'modal-transfer-cancel'
+                },
+                didOpen: () => {
+                    Swal.getPopup()?.querySelector('#saida-novo-desc')?.focus();
+                },
                 preConfirm: () => {
                     const qtd = Number(document.getElementById('saida-novo-qtd')?.value);
                     const desc = document.getElementById('saida-novo-desc')?.value?.trim();

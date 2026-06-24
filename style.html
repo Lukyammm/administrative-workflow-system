@@ -1560,6 +1560,47 @@
             color: var(--muted-color);
         }
 
+        .modal-transfer-fields {
+            display: grid;
+            gap: 14px;
+        }
+
+        .modal-transfer-input {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: color-mix(in srgb, var(--light-color) 75%, white 25%);
+            border-radius: 12px;
+            border: 1px solid color-mix(in srgb, var(--dark-color) 10%, transparent);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 2px;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .modal-transfer-input i {
+            color: var(--primary-color);
+            margin-left: 12px;
+        }
+
+        .modal-transfer-input .modal-transfer-field {
+            padding: 12px 14px;
+        }
+
+        .modal-transfer-input:focus-within {
+            border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+        }
+
+        .modal-transfer-input .modal-transfer-field::-webkit-outer-spin-button,
+        .modal-transfer-input .modal-transfer-field::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .modal-transfer-input .modal-transfer-field[type="number"] {
+            -moz-appearance: textfield;
+        }
+
         .modal-transfer-confirm,
         .modal-transfer-cancel {
             border-radius: 12px !important;
