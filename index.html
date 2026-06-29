@@ -16,9 +16,9 @@
     <div id="login-container" class="login-wrapper">
         <div class="login-card">
             <h2>ACESSO RESTRITO</h2>
-            <img src="https://i.ibb.co/hxbRMNvV/logo-HUC.jpg" alt="Logo Hospital Universitário do Ceará" loading="lazy">
+            <img id="login-logo" src="https://i.ibb.co/hxbRMNvV/logo-HUC.jpg" alt="Logo da instituição" loading="lazy">
             <h3 class="brand-name" aria-label="Cosign - Gerenciamento de Armários">
-                <span class="brand-text">Cosign</span>
+                <span class="brand-text" id="brand-text-login">Cosign</span>
                 <span class="brand-subtitle">- Gerenciamento de Armários</span>
             </h3>
             <form id="login-form" class="login-form" novalidate>
@@ -45,13 +45,13 @@
                         <i class="fas fa-lock"></i>
                     </div>
                     <div class="sidebar-title brand-name" aria-label="Cosign">
-                        <span class="brand-text">Cosign</span>
+                        <span class="brand-text" id="brand-text-sidebar">Cosign</span>
                     </div>
                 </div>
                 <button id="sidebar-pin-btn" class="sidebar-pin-btn" type="button" aria-label="Fixar menu expandido" title="Fixar menu">
                     <i class="fas fa-thumbtack"></i>
                 </button>
-                <p>Hospital Universitário do Ceará</p>
+                <p id="sidebar-hospital-name">Hospital Universitário do Ceará</p>
             </div>
             <nav class="sidebar-menu">
                 <ul>
@@ -69,6 +69,7 @@
                     <li><a href="#" data-page="logs"><i class="fas fa-clipboard-list"></i> <span>LOGS</span></a></li>
                     <li><a href="#" data-page="registros-imagens"><i class="fas fa-images"></i> <span>Registros de Imagens</span></a></li>
                     <li><a href="#" data-page="backup"><i class="fas fa-box-archive"></i> <span>Backup</span></a></li>
+                    <li><a href="#" data-page="configuracoes"><i class="fas fa-sliders"></i> <span>Configurações do App</span></a></li>
                 </ul>
             </nav>
             <div class="sidebar-footer">
@@ -813,6 +814,64 @@
                         </button>
                     </div>
                     <div id="backup-resultado" class="table-subtitle">Nenhum backup executado nesta sessão.</div>
+                </div>
+            </div>
+            <!-- Configurações do App (white-label / branding) -->
+            <div class="page" id="configuracoes">
+                <div class="data-table">
+                    <div class="table-header">
+                        <div>
+                            <h3>Configurações do App</h3>
+                            <p class="table-subtitle">Personalize a identidade da instituição. As mudanças valem para todos os usuários.</p>
+                        </div>
+                    </div>
+                    <form id="config-form" class="config-form">
+                        <div class="config-grid">
+                            <div class="config-fields">
+                                <div class="form-group">
+                                    <label for="config-app-name">Nome do app</label>
+                                    <input type="text" id="config-app-name" class="form-control" maxlength="40" placeholder="Cosign">
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-hospital-name">Nome da instituição</label>
+                                    <input type="text" id="config-hospital-name" class="form-control" maxlength="120" placeholder="Hospital Universitário do Ceará">
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-hospital-short">Sigla</label>
+                                    <input type="text" id="config-hospital-short" class="form-control" maxlength="16" placeholder="HUC">
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-print-badge">Selo do comprovante</label>
+                                    <input type="text" id="config-print-badge" class="form-control" maxlength="60" placeholder="Guarda Volumes - NAC HUC">
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-brand-color">Cor da marca</label>
+                                    <div class="config-color-row">
+                                        <input type="color" id="config-brand-color" value="#3B82F6" aria-label="Cor da marca">
+                                        <input type="text" id="config-brand-color-hex" class="form-control" maxlength="7" placeholder="#3B82F6">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-logo-input">Logo da instituição</label>
+                                    <input type="file" id="config-logo-input" accept="image/*" class="form-control">
+                                    <div class="field-hint">PNG ou JPG. Recomendado quadrado, fundo claro.</div>
+                                </div>
+                            </div>
+                            <aside class="config-preview" aria-label="Pré-visualização">
+                                <div class="config-preview-title">Pré-visualização</div>
+                                <div class="config-preview-card">
+                                    <img id="config-logo-preview" class="config-preview-logo" src="" alt="Logo" hidden>
+                                    <div class="config-preview-logo-empty" id="config-logo-empty"><i class="fas fa-hospital"></i></div>
+                                    <div class="config-preview-name" id="config-preview-name">Cosign</div>
+                                    <div class="config-preview-hospital" id="config-preview-hospital">Hospital Universitário do Ceará</div>
+                                    <button type="button" class="config-preview-btn" id="config-preview-btn">Botão de exemplo</button>
+                                </div>
+                            </aside>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" id="config-salvar"><i class="fas fa-save"></i> Salvar configurações</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
