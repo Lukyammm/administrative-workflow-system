@@ -1603,9 +1603,7 @@ function handlePost(e) {
     registrarContingencia: true,
     registrarContingenciaTermo: true,
     salvarMovimentacao: true,
-    finalizarMovimentacoesArmario: true,
     cadastrarArmarioFisico: true,
-    criarArmariosUso: true,
     cadastrarUnidade: true,
     alternarStatusUnidade: true,
     salvarTermoCompleto: true,
@@ -1707,10 +1705,6 @@ function handlePost(e) {
       
       case 'getEstatisticasDashboard':
         return ContentService.createTextOutput(JSON.stringify(getEstatisticasDashboard(e.parameter.tipoUsuario)))
-          .setMimeType(ContentService.MimeType.JSON);
-
-      case 'getDescarte':
-        return ContentService.createTextOutput(JSON.stringify(getItensDescarte()))
           .setMimeType(ContentService.MimeType.JSON);
 
       case 'getHistorico':
@@ -1894,69 +1888,6 @@ function obterMapaInternacoesBaseVitae() {
       return { success: true, data: mapa };
     } catch (erro) {
       registrarLog('ERRO', 'Falha ao mapear PENTAHO_ENTRADA_CLINICA: ' + erro.toString());
-      return { success: true, data: {} };
-    }
-  });
-
-  if (resultado && resultado.success && resultado.data) {
-    return resultado.data;
-  }
-  return {};
-}
-
-function obterMapaPacientesBaseVitae() {
-  var chaveCache = montarChaveCache('base-vitae', 'pacientes-detalhes');
-  var resultado = executarComCache(chaveCache, CACHE_TTL_PADRAO, function() {
-    try {
-      var sheet = obterAbaEntradaClinicaExterna();
-      if (!sheet || sheet.getLastRow() < 2) {
-        return { success: true, data: {} };
-      }
-
-      var estrutura = obterEstruturaPlanilha(sheet);
-      var totalLinhas = sheet.getLastRow() - 1;
-      var totalColunas = estrutura.ultimaColuna || sheet.getLastColumn();
-      var dados = sheet.getRange(2, 1, totalLinhas, totalColunas).getValues();
-
-      var prontuarioIndex = obterIndiceColuna(estrutura, ['prontuario'], 0);
-      var nomeIndex = obterIndiceColuna(estrutura, ['paciente', 'nome paciente', 'nome do paciente', 'nome'], 1);
-      var setorIndex = obterIndiceColuna(estrutura, ['setor internacao', 'setor internação', 'setor'], 6);
-      var enfermariaIndex = obterIndiceColuna(estrutura, ['enfermaria'], 9);
-      var leitoIndex = obterIndiceColuna(estrutura, ['leito'], 10);
-      var entradaIndex = obterIndiceColuna(estrutura, ['entrada', 'data entrada'], 12);
-      var saidaIndex = obterIndiceColuna(estrutura, ['saida', 'saída'], 13);
-
-      var mapa = {};
-
-      dados.forEach(function(linha) {
-        var prontuarioValor = obterValorLinhaFlexivel(linha, estrutura, ['prontuario'], linha[prontuarioIndex]);
-        var prontuario = normalizarIdentificador(prontuarioValor);
-        if (!prontuario) {
-          return;
-        }
-
-        var entradaData = entradaIndex > -1 ? obterDataValida(linha[entradaIndex]) : null;
-        var saidaData = saidaIndex > -1 ? obterDataValida(linha[saidaIndex]) : null;
-        var dataReferencia = saidaData || entradaData || new Date(0);
-        var dataReferenciaNumero = dataReferencia instanceof Date ? dataReferencia.getTime() : 0;
-
-        var registroAtual = mapa[prontuario];
-        if (registroAtual && registroAtual.dataReferencia !== undefined && registroAtual.dataReferencia > dataReferenciaNumero) {
-          return;
-        }
-
-        mapa[prontuario] = {
-          nome: obterValorLinhaFlexivel(linha, estrutura, ['paciente', 'nome paciente', 'nome do paciente', 'nome'], linha[nomeIndex]) || '',
-          setor: obterValorLinhaFlexivel(linha, estrutura, ['setor internacao', 'setor internação', 'setor'], linha[setorIndex]) || '',
-          enfermaria: obterValorLinhaFlexivel(linha, estrutura, ['enfermaria'], linha[enfermariaIndex]) || '',
-          leito: obterValorLinhaFlexivel(linha, estrutura, ['leito'], linha[leitoIndex]) || '',
-          dataReferencia: dataReferenciaNumero
-        };
-      });
-
-      return { success: true, data: mapa };
-    } catch (erro) {
-      registrarLog('ERRO', 'Falha ao mapear PENTAHO_ENTRADA_CLINICA para busca de pacientes: ' + erro.toString());
       return { success: true, data: {} };
     }
   });
