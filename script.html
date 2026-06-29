@@ -3256,21 +3256,57 @@
                 finalizarLoading();
             }
         }
-        function dispararToast(mensagem, icon, timer) {
-            return Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon,
-                title: mensagem,
-                showConfirmButton: false,
-                timer,
-                timerProgressBar: true,
-                width: 'auto',
-                didOpen: (toast) => {
-                    toast.addEventListener('mouseenter', Swal.stopTimer);
-                    toast.addEventListener('mouseleave', Swal.resumeTimer);
-                }
+        const ICONES_TOAST = {
+            success: '✓',
+            error: '✕',
+            warning: '!',
+            info: 'i'
+        };
+        function obterContainerToast() {
+            let container = document.getElementById('toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toast-container';
+                document.body.appendChild(container);
+            }
+            return container;
+        }
+        function dispararToast(mensagem, tipo, timer) {
+            // Aviso simples e discreto: barrinha no canto, sem bloquear a tela
+            // nem disparar animações pesadas (uso em tablet).
+            const container = obterContainerToast();
+            const toast = document.createElement('div');
+            toast.className = `toast-simples toast-${tipo}`;
+            toast.setAttribute('role', 'status');
+
+            const icone = document.createElement('span');
+            icone.className = 'toast-simples-icone';
+            icone.textContent = ICONES_TOAST[tipo] || ICONES_TOAST.info;
+
+            const texto = document.createElement('span');
+            texto.className = 'toast-simples-texto';
+            texto.textContent = mensagem;
+
+            toast.appendChild(icone);
+            toast.appendChild(texto);
+            container.appendChild(toast);
+
+            // força reflow para a transição de entrada acontecer
+            requestAnimationFrame(() => toast.classList.add('visivel'));
+
+            const remover = () => {
+                if (!toast.isConnected) return;
+                toast.classList.remove('visivel');
+                toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+                setTimeout(() => toast.remove(), 400);
+            };
+
+            const idTimer = setTimeout(remover, timer);
+            toast.addEventListener('click', () => {
+                clearTimeout(idTimer);
+                remover();
             });
+            return Promise.resolve();
         }
         function mostrarErro(mensagem) {
             // Toast discreto (uso em tablet): canto superior, sem bloquear a tela.
