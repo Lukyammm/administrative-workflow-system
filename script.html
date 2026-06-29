@@ -10435,21 +10435,6 @@
             `;
             return bloco;
         }
-        // Atualiza a lista de movimentações e o inventário no cliente sem aguardar o servidor,
-        // priorizando a percepção de rapidez. A reconciliação com o servidor ocorre em segundo plano.
-        function aplicarMovimentacaoOtimista(id, novaMovimentacao) {
-            if (!elementos.movimentacoesList) return;
-            movimentacoesRegistradas = Array.isArray(movimentacoesRegistradas)
-                ? movimentacoesRegistradas.concat([novaMovimentacao])
-                : [novaMovimentacao];
-            const placeholder = elementos.movimentacoesList.querySelector('.info-box');
-            if (placeholder) {
-                placeholder.remove();
-            }
-            elementos.movimentacoesList.appendChild(criarBlocoMovimentacao(novaMovimentacao));
-            movimentacaoInventarioAtual = consolidarInventarioMovimentacao(movimentacaoVolumesBase, movimentacoesRegistradas);
-            atualizarResumoItensMovimentacao(movimentacaoVolumesBase, movimentacaoInventarioAtual, movimentacoesRegistradas);
-        }
         async function renderizarMovimentacoes(id) {
             if (!elementos.movimentacoesList) return;
             const armario = obterArmarioPorId(id) || estado.armarios.find(item => normalizarIdentificador(item.idPlanilha) === normalizarIdentificador(id));
@@ -10575,51 +10560,41 @@
                     assinaturaBase64: assinaturaMov.dataUrl || '',
                     assinaturaMime: assinaturaMov.mime || 'image/png'
                 };
-                const armarioAlvo = movimentacaoArmarioAtual;
-                const resultado = await callGoogleScript('salvarMovimentacao', dados);
-                if (resultado.success) {
-                    // Feedback imediato: o registro já foi confirmado pelo servidor, então
-                    // mostramos o sucesso e liberamos o formulário sem esperar a releitura.
-                    mostrarSucesso('Movimentação registrada com sucesso');
-                    reproduzirSomMovimentacao('sucesso');
+                // Neste ponto todos os dados (itens, fotos e assinatura) já foram capturados
+                // de forma síncrona no objeto `dados`. Portanto podemos fechar o modal e liberar
+                // a interface imediatamente, registrando a movimentação em segundo plano — sem
+                // bloquear o usuário e sem reler/atualizar o front depois de salvar.
+                mostrarSucesso('Movimentação registrada');
+                reproduzirSomMovimentacao('sucesso');
 
-                    // Atualização otimista da lista/inventário com os dados que já temos no cliente.
-                    aplicarMovimentacaoOtimista(armarioAlvo, {
-                        tipo: tipoSelecionado,
-                        data: dados.data,
-                        hora: dados.hora,
-                        descricao: observacaoMov,
-                        responsavel: responsavelRegistro,
-                        itens: itensMovimentados.map(item => ({
-                            quantidade: item.quantidade,
-                            descricao: item.descricao
-                        })),
-                        assinatura: assinaturaMov.dataUrl || assinaturaMov.base64 || '',
-                        assinaturaMime: assinaturaMov.mime || 'image/png'
-                    });
-
-                    elementos.movimentacaoForm.reset();
-                    elementos.movTipo.value = '';
-                    if (elementos.movObservacao) {
-                        elementos.movObservacao.value = '';
-                    }
-                    limparItensMovimentacaoFormulario();
-                    limparAssinaturaMovimentacao(true);
-                    inicializarCanvasAssinatura();
-                    const padraoLocal = obterDataHoraLocalPadrao();
-                    elementos.movData.value = padraoLocal.data;
-                    elementos.movHora.value = padraoLocal.hora;
-                    ativarAbaMovimentacao('');
-                    mostrarPassoMovimentacao(0);
-
-                    // Reconciliação em segundo plano: garante que a lista reflita exatamente
-                    // o servidor (ids, fotos, normalizações) sem bloquear a percepção do usuário.
-                    renderizarMovimentacoes(armarioAlvo).catch(erro => {
-                        console.warn('Falha ao sincronizar movimentações após o registro:', erro);
-                    });
-                } else {
-                    notificarErroPadrao(resultado);
+                // Limpa o formulário e fecha o modal antes de disparar o salvamento. A ordem é
+                // segura porque `dados` já contém uma cópia de tudo que será enviado.
+                elementos.movimentacaoForm.reset();
+                elementos.movTipo.value = '';
+                if (elementos.movObservacao) {
+                    elementos.movObservacao.value = '';
                 }
+                limparItensMovimentacaoFormulario();
+                limparAssinaturaMovimentacao(true);
+                const padraoLocal = obterDataHoraLocalPadrao();
+                elementos.movData.value = padraoLocal.data;
+                elementos.movHora.value = padraoLocal.hora;
+                ativarAbaMovimentacao('');
+                mostrarPassoMovimentacao(0);
+                fecharMovimentacaoModal();
+
+                // Salvamento em segundo plano (fire-and-forget). Não atualizamos o front após
+                // salvar; apenas avisamos caso o registro falhe, para que nada se perca em silêncio.
+                callGoogleScript('salvarMovimentacao', dados)
+                    .then(resultado => {
+                        if (!resultado || !resultado.success) {
+                            notificarErroPadrao(resultado || { error: 'Não foi possível registrar a movimentação.' });
+                        }
+                    })
+                    .catch(erro => {
+                        console.error('Erro ao registrar movimentação em segundo plano:', erro);
+                        mostrarErro('Não foi possível registrar a movimentação. Verifique a conexão e tente novamente.');
+                    });
             } finally {
                 movimentacaoEmProgresso = false;
             }
