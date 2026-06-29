@@ -1,6 +1,7 @@
 // Configuração inicial
 function doGet() {
   var template = HtmlService.createTemplateFromFile('index');
+  template.scriptUrl = obterUrlWebApp();
   return template.evaluate()
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -43,6 +44,15 @@ function callAction(action, parametros) {
     }
   }
   return resposta;
+}
+
+function obterUrlWebApp() {
+  try {
+    var url = ScriptApp.getService().getUrl();
+    return url ? url : '';
+  } catch (erro) {
+    return '';
+  }
 }
 
 function include(filename) {

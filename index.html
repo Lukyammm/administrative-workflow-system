@@ -1482,6 +1482,11 @@
             <span id="global-loading-text">Processando...</span>
         </div>
     </div>
+    <script>
+        // URL do WebApp injetada automaticamente pelo servidor (ScriptApp.getService().getUrl()).
+        // Evita ter que atualizar a URL na mão a cada nova implantação.
+        window.SCRIPT_URL = '<?= scriptUrl ?>';
+    </script>
     <?!= include('script'); ?>
 
 </body>
