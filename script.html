@@ -3321,6 +3321,35 @@
         function mostrarAviso(mensagem) {
             return dispararToast(mensagem, 'warning', 4000);
         }
+        // Toast com janela de "Desfazer". Resolve true se o tempo expirar (ação
+        // deve prosseguir) ou false se o usuário desfizer. Pensado para tablet:
+        // barra de progresso visível, alvo de toque grande.
+        function mostrarToastDesfazer(mensagem, { ms = 6000, tipo = 'info' } = {}) {
+            const container = obterContainerToast();
+            const toast = document.createElement('div');
+            toast.className = `toast-simples toast-${tipo} toast-desfazer`;
+            toast.setAttribute('role', 'status');
+            toast.innerHTML = `
+                <span class="toast-simples-icone">${ICONES_TOAST[tipo] || ICONES_TOAST.info}</span>
+                <span class="toast-simples-texto">${mensagem}</span>
+                <button type="button" class="toast-desfazer-btn">Desfazer</button>
+                <span class="toast-desfazer-barra" style="animation-duration:${ms}ms"></span>`;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.add('visivel'));
+            return new Promise((resolve) => {
+                let resolvido = false;
+                const concluir = (prosseguir) => {
+                    if (resolvido) return;
+                    resolvido = true;
+                    clearTimeout(timer);
+                    toast.classList.remove('visivel');
+                    setTimeout(() => toast.remove(), 350);
+                    resolve(prosseguir);
+                };
+                const timer = setTimeout(() => concluir(true), ms);
+                toast.querySelector('.toast-desfazer-btn').addEventListener('click', () => concluir(false));
+            });
+        }
         function notificarErroPadrao(resultado, mensagemPadrao = 'Ocorreu um erro inesperado') {
             if (!resultado || resultado._erroNotificado) {
                 return;
@@ -4820,6 +4849,23 @@
                 const nomePaciente = armario.status === 'livre'
                     ? 'Disponível'
                     : (armario.nomePaciente || '-');
+                // Selo de custódia: surfacar o status do termo direto no card de
+                // acompanhante em uso (pendente pulsa, andamento âmbar, finalizado verde).
+                let seloTermoHtml = '';
+                if (normalizarTexto(armario.tipo) === 'acompanhante'
+                    && armario.status !== 'livre'
+                    && !armarioEhContingencia(armario)) {
+                    const termoNorm = normalizarTexto(armario.termoStatus);
+                    const seloVariante = termoNorm === 'finalizado'
+                        ? 'ok'
+                        : termoNorm === 'em andamento'
+                            ? 'andamento'
+                            : 'pendente';
+                    seloTermoHtml = `<span class="armario-selo-termo ${seloVariante}">
+                            <i class="fas fa-file-signature" aria-hidden="true"></i>
+                            Termo ${formatarStatusTermo(armario.termoStatus).toLowerCase()}
+                        </span>`;
+                }
                 card.innerHTML = `
                     <div class="armario-status-bar status-${classeStatus}" aria-hidden="true"></div>
                     <div class="armario-header minimal">
@@ -4832,6 +4878,7 @@
                         </div>
                     </div>
                     <div class="armario-paciente-line" title="${nomePaciente}">${nomePaciente}</div>
+                    ${seloTermoHtml}
                 `;
                 card.addEventListener('click', () => abrirModalArmario(armario));
                 return card;
@@ -6945,6 +6992,17 @@
                 const reimpressaoHtml = armario.tipo === 'acompanhante'
                     ? `<div class="armario-modal-actions"><button id="btn-reimprimir-ticket" class="armario-modal-action-btn" type="button">Reimprimir comprovante</button></div>`
                     : '';
+                // Acompanhante em uso: dossiê em drawer (não-bloqueante) em vez de
+                // modal. Visitante e contingência mantêm o modal clássico (fluxos
+                // com horário / "mover para armário livre").
+                if (normalizarTexto(armario.tipo) === 'acompanhante' && !ehContingencia) {
+                    abrirDrawerArmario(armario, {
+                        dadosImpressao: dadosImpressaoArmario,
+                        termoPendente,
+                        termoEmAndamento
+                    });
+                    return;
+                }
                 Swal.fire({
                     html: `
                         <div class="armario-modal-card">
@@ -7093,6 +7151,214 @@
                         abrirMovimentacoes(armario.id);
                     }
                 });
+            }
+        }
+        // ===== Drawer / bottom sheet do armário em uso (acompanhante) =====
+        let drawerArmarioEscHandler = null;
+        let drawerDossieToken = 0;
+        let drawerArmarioWired = false;
+        function garantirListenersDrawer() {
+            if (drawerArmarioWired) return;
+            drawerArmarioWired = true;
+            document.getElementById('armario-drawer-scrim')?.addEventListener('click', fecharDrawerArmario);
+            document.getElementById('armario-drawer-close')?.addEventListener('click', fecharDrawerArmario);
+        }
+        function fecharDrawerArmario() {
+            const scrim = document.getElementById('armario-drawer-scrim');
+            const drawer = document.getElementById('armario-drawer');
+            if (!drawer || drawer.hasAttribute('hidden')) return;
+            drawer.classList.remove('show');
+            if (scrim) scrim.classList.remove('show');
+            if (drawerArmarioEscHandler) {
+                document.removeEventListener('keydown', drawerArmarioEscHandler);
+                drawerArmarioEscHandler = null;
+            }
+            const finalizar = () => {
+                drawer.setAttribute('hidden', '');
+                if (scrim) scrim.setAttribute('hidden', '');
+                travaRolagem.remover();
+            };
+            drawer.addEventListener('transitionend', finalizar, { once: true });
+            setTimeout(finalizar, 380);
+        }
+        function abrirDrawerArmario(armario, opcoes = {}) {
+            const scrim = document.getElementById('armario-drawer-scrim');
+            const drawer = document.getElementById('armario-drawer');
+            if (!drawer) return;
+            const tituloEl = document.getElementById('armario-drawer-title');
+            const subEl = document.getElementById('armario-drawer-sub');
+            const statlineEl = document.getElementById('armario-drawer-statline');
+            const bodyEl = document.getElementById('armario-drawer-body');
+            const footEl = document.getElementById('armario-drawer-foot');
+
+            const termoNorm = normalizarTexto(armario.termoStatus);
+            const seloVar = termoNorm === 'finalizado' ? 'ok' : termoNorm === 'em andamento' ? 'andamento' : 'pendente';
+            tituloEl.innerHTML = `Armário ${armario.numero || '-'} <span class="drawer-selo ${seloVar}"><i class="fas fa-file-signature" aria-hidden="true"></i> Termo ${formatarStatusTermo(armario.termoStatus).toLowerCase()}</span>`;
+            const paciente = armario.nomePaciente || '-';
+            const leito = armario.leito ? ` (Leito ${armario.leito})` : '';
+            subEl.textContent = `${armario.nomeVisitante || 'Acompanhante'} · responsável por ${paciente}${leito}`;
+
+            const pills = [];
+            if (armario.horaInicio) pills.push(`<span class="drawer-pill"><i class="fas fa-clock"></i> Desde ${armario.horaInicio}</span>`);
+            pills.push(`<span class="drawer-pill"><i class="fas fa-box"></i> ${formatarVolumeParaExibicao(armario.volumes)} volume(s)</span>`);
+            if (armario.whatsapp) pills.push(`<span class="drawer-pill"><i class="fas fa-phone"></i> ${armario.whatsapp}</span>`);
+            if (armario.unidade) pills.push(`<span class="drawer-pill"><i class="fas fa-hospital"></i> ${armario.unidade}</span>`);
+            statlineEl.innerHTML = pills.join('');
+
+            // Rodapé com as ações (reusa os fluxos existentes)
+            const podeAplicarTermo = opcoes.termoPendente || opcoes.termoEmAndamento;
+            footEl.innerHTML = `
+                <div class="drawer-foot-support">
+                    <button class="drawer-support-btn" id="drawer-btn-imagens" type="button"><i class="fas fa-images"></i> Registros em imagens</button>
+                    ${opcoes.dadosImpressao ? '<button class="drawer-support-btn" id="drawer-btn-reimprimir" type="button"><i class="fas fa-print"></i> Reimprimir comprovante</button>' : ''}
+                    ${podeAplicarTermo ? '<button class="drawer-support-btn destaque" id="drawer-btn-termo" type="button"><i class="fas fa-file-signature"></i> Aplicar termo agora</button>' : ''}
+                </div>
+                <div class="drawer-foot-main">
+                    <button class="drawer-action ghost" id="drawer-btn-movimentar" type="button"><i class="fas fa-right-left"></i> Movimentar itens</button>
+                    <button class="drawer-action danger" id="drawer-btn-liberar" type="button"><i class="fas fa-unlock"></i> Liberar armário</button>
+                </div>`;
+
+            footEl.querySelector('#drawer-btn-movimentar')?.addEventListener('click', () => {
+                fecharDrawerArmario();
+                abrirMovimentacoes(armario.id);
+            });
+            footEl.querySelector('#drawer-btn-liberar')?.addEventListener('click', () => {
+                fecharDrawerArmario();
+                confirmarLiberacaoAcompanhante(armario.id);
+            });
+            footEl.querySelector('#drawer-btn-imagens')?.addEventListener('click', async (ev) => {
+                const finalizar = iniciarLoadingBotao(ev.currentTarget);
+                try { await abrirGaleriaImagensArmario(armario.id); } finally { finalizar(); }
+            });
+            footEl.querySelector('#drawer-btn-reimprimir')?.addEventListener('click', () => {
+                if (opcoes.dadosImpressao) abrirModalImpressaoReserva(opcoes.dadosImpressao);
+            });
+            footEl.querySelector('#drawer-btn-termo')?.addEventListener('click', async (ev) => {
+                const finalizar = iniciarLoadingBotao(ev.currentTarget);
+                try { fecharDrawerArmario(); await abrirTermoWizard(armario.id); } finally { finalizar(); }
+            });
+
+            // Corpo: estado de carregamento; preenche async com inventário + timeline
+            bodyEl.innerHTML = `
+                <div class="drawer-section-title"><i class="fas fa-images"></i> Inventário visual</div>
+                <div class="drawer-inv-loading" id="drawer-inv"><span class="drawer-spinner"></span> Carregando itens...</div>
+                <div class="drawer-section-title"><i class="fas fa-stream"></i> Linha do tempo da custódia</div>
+                <div class="drawer-tl-loading" id="drawer-tl"><span class="drawer-spinner"></span> Carregando histórico...</div>`;
+
+            // Mostra o drawer
+            scrim?.removeAttribute('hidden');
+            drawer.removeAttribute('hidden');
+            travaRolagem.aplicar();
+            // reflow para transição
+            void drawer.offsetWidth;
+            scrim?.classList.add('show');
+            drawer.classList.add('show');
+            document.getElementById('armario-drawer-close')?.focus();
+
+            garantirListenersDrawer();
+            drawerArmarioEscHandler = (e) => { if (e.key === 'Escape') fecharDrawerArmario(); };
+            document.addEventListener('keydown', drawerArmarioEscHandler);
+
+            const token = ++drawerDossieToken;
+            carregarDossieArmario(armario).then((dossie) => {
+                if (token !== drawerDossieToken) return; // drawer já fechou/trocou
+                preencherDossieArmario(dossie);
+            }).catch(() => {
+                if (token !== drawerDossieToken) return;
+                const inv = document.getElementById('drawer-inv');
+                const tl = document.getElementById('drawer-tl');
+                if (inv) inv.innerHTML = '<div class="drawer-empty">Não foi possível carregar o inventário.</div>';
+                if (tl) tl.innerHTML = '<div class="drawer-empty">Não foi possível carregar o histórico.</div>';
+            });
+        }
+        async function carregarDossieArmario(armario) {
+            const parametros = montarPayloadTermo(armario, { incluirFinalizados: true });
+            const [termoResp, movResp] = await Promise.all([
+                callGoogleScript('getTermo', parametros).catch(() => null),
+                callGoogleScript('getMovimentacoes', parametros).catch(() => null)
+            ]);
+            const volumes = [];
+            const eventos = [];
+            if (termoResp && termoResp.success && termoResp.data) {
+                const termo = termoResp.data;
+                (Array.isArray(termo.volumes) ? termo.volumes : []).forEach((vol, i) => {
+                    volumes.push({
+                        descricao: vol.descricao || `Volume ${i + 1}`,
+                        quantidade: vol.quantidade || '',
+                        fotoUrl: vol.fotoUrl || ''
+                    });
+                });
+                if (termo.aplicadoEm) {
+                    eventos.push({
+                        tipo: 'termo',
+                        dataHora: formatarDataHora(termo.aplicadoEm),
+                        titulo: 'Termo assinado',
+                        responsavel: termo.acompanhante || ''
+                    });
+                }
+            }
+            if (movResp && movResp.success && Array.isArray(movResp.data)) {
+                movResp.data.forEach((mov) => {
+                    const tipoNorm = normalizarTexto(mov.tipo);
+                    const itens = normalizarListaItensMovimentacao(mov.itens);
+                    const desc = itens.length
+                        ? itens.map(it => `${Number(it.quantidade)}x ${it.descricao}`).join('; ')
+                        : (mov.descricao || '');
+                    eventos.push({
+                        tipo: tipoNorm.includes('saida') || tipoNorm.includes('saída') ? 'saida' : 'entrada',
+                        dataHora: (mov.data && mov.hora) ? `${mov.data} ${mov.hora}` : formatarDataHora(mov.dataHoraRegistro || ''),
+                        titulo: `${formatarTituloMovimento(tipoNorm) || 'Movimentação'}: ${desc || '—'}`,
+                        responsavel: mov.responsavel || ''
+                    });
+                });
+            }
+            return { volumes, eventos };
+        }
+        function preencherDossieArmario(dossie) {
+            const inv = document.getElementById('drawer-inv');
+            const tl = document.getElementById('drawer-tl');
+            if (inv) {
+                inv.classList.remove('drawer-inv-loading');
+                if (!dossie.volumes.length) {
+                    inv.innerHTML = '<div class="drawer-empty">Nenhum volume registrado.</div>';
+                } else {
+                    const grupo = `drawer-inv-${Date.now()}`;
+                    const comFoto = dossie.volumes.filter(v => v.fotoUrl);
+                    registrarGaleriaImagem(grupo, comFoto.map(v => ({
+                        url: v.fotoUrl, titulo: v.descricao, contexto: 'Inventário', detalhe: v.quantidade ? `Quantidade: ${v.quantidade}` : '', dataHora: '', responsavel: ''
+                    })));
+                    let idxFoto = 0;
+                    inv.innerHTML = `<div class="drawer-inv-grid">${dossie.volumes.map((v) => {
+                        if (v.fotoUrl) {
+                            const idx = idxFoto++;
+                            return `<button type="button" class="drawer-inv-item" data-imagem-modal="true" data-image-group="${grupo}" data-image-index="${idx}" aria-label="Abrir foto: ${v.descricao}">
+                                <span class="drawer-inv-thumb" style="background-image:url('${montarThumbDrive(v.fotoUrl, 300)}')">${v.quantidade ? `<span class="drawer-inv-qtd">${v.quantidade}x</span>` : ''}</span>
+                                <span class="drawer-inv-cap">${v.descricao}</span>
+                            </button>`;
+                        }
+                        return `<div class="drawer-inv-item sem-foto">
+                            <span class="drawer-inv-thumb"><i class="fas fa-box"></i>${v.quantidade ? `<span class="drawer-inv-qtd">${v.quantidade}x</span>` : ''}</span>
+                            <span class="drawer-inv-cap">${v.descricao}</span>
+                        </div>`;
+                    }).join('')}</div>`;
+                }
+            }
+            if (tl) {
+                tl.classList.remove('drawer-tl-loading');
+                if (!dossie.eventos.length) {
+                    tl.innerHTML = '<div class="drawer-empty">Sem movimentações registradas.</div>';
+                } else {
+                    const icone = { termo: 'fa-file-signature', entrada: 'fa-arrow-down', saida: 'fa-arrow-up' };
+                    tl.innerHTML = `<div class="drawer-tl">${dossie.eventos.map(ev => `
+                        <div class="drawer-tl-it ${ev.tipo}">
+                            <span class="drawer-tl-dot"><i class="fas ${icone[ev.tipo] || 'fa-circle'}"></i></span>
+                            <div class="drawer-tl-content">
+                                <div class="drawer-tl-when">${ev.dataHora || '-'}</div>
+                                <div class="drawer-tl-what">${ev.titulo}</div>
+                                ${ev.responsavel ? `<div class="drawer-tl-who"><i class="fas fa-user"></i> ${ev.responsavel}</div>` : ''}
+                            </div>
+                        </div>`).join('')}</div>`;
+                }
             }
         }
         async function moverContingenciaParaArmarioLivre(armarioContingencia) {
@@ -7878,6 +8144,23 @@
                 default:
                     return 'Livre';
             }
+        }
+        // Extrai o FILE_ID de uma URL do Google Drive (formatos uc?export=view&id=,
+        // /file/d/<id>/, open?id=, etc.) para montar a miniatura estável.
+        function extrairDriveFileId(url) {
+            if (!url) return '';
+            const texto = url.toString();
+            const porId = texto.match(/[?&]id=([A-Za-z0-9_-]+)/);
+            if (porId) return porId[1];
+            const porPath = texto.match(/\/d\/([A-Za-z0-9_-]+)/);
+            if (porPath) return porPath[1];
+            return '';
+        }
+        // URL de miniatura confiável do Drive (o uc?export=view é instável como
+        // hotlink de <img>). Cai para a URL original se não conseguir o id.
+        function montarThumbDrive(url, largura = 400) {
+            const id = extrairDriveFileId(url);
+            return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${largura}` : url;
         }
         function formatarStatusTermo(status) {
             const normalizado = normalizarTexto(status);
@@ -10535,6 +10818,10 @@
             const conteudoImagens = imagens.length
                 ? `<div class="registro-imagens-grid">${imagens.map((item, indice) => `
                         <article class="registro-imagem-card">
+                            <button type="button" class="registro-imagem-thumb" data-imagem-modal="true" data-image-group="${grupoGaleria}" data-image-index="${indice}" aria-label="Abrir imagem: ${item.titulo}">
+                                <img src="${montarThumbDrive(item.url)}" alt="${item.titulo}" loading="lazy">
+                                <span class="registro-imagem-thumb-zoom" aria-hidden="true"><i class="fas fa-expand"></i></span>
+                            </button>
                             <div class="registro-imagem-info">
                                 <p class="registro-imagem-contexto">${item.contexto || ''}</p>
                                 <h4 class="registro-imagem-titulo">${item.titulo}</h4>
@@ -10543,7 +10830,6 @@
                                     ${item.dataHora ? `<span><i class="fas fa-clock"></i> ${item.dataHora}</span>` : ''}
                                     ${item.responsavel ? `<span><i class="fas fa-user"></i> ${item.responsavel}</span>` : ''}
                                 </div>
-                                <a class="registro-imagem-link" href="${item.url}" target="_blank" rel="noopener noreferrer">Abrir imagem</a>
                             </div>
                         </article>
                     `).join('')}</div>`
@@ -11162,6 +11448,15 @@
                     }
                 }
             };
+
+            // Janela de "Desfazer" antes de enviar ao backend. A assinatura de
+            // encerramento já foi coletada; se o operador desfizer, descartamos e o
+            // armário permanece ativo (nada é enviado).
+            const prosseguirLiberacao = await mostrarToastDesfazer(`Liberando armário ${armario.numero}...`, { ms: 6000 });
+            if (!prosseguirLiberacao) {
+                mostrarAviso('Liberação desfeita. O armário permanece ativo.');
+                return;
+            }
 
             const atualizouLocal = garantirArmarioLiberadoLocal(id, metodo, confirmacao);
             if (atualizouLocal) {
