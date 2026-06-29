@@ -332,6 +332,83 @@
             --sidebar-logout-border: rgba(255,255,255,0.28);
         }
 
+        /* ===== Tema temporário: Copa / Brasil =====
+           Verde-bandeira, amarelo-ouro e azul. Base clara para manter contraste.
+           Para remover: apagar este bloco, as regras [data-theme="copa"] abaixo
+           e a entrada 'copa' no script.html. */
+        [data-theme="copa"] {
+            --color-primary-500: #009739;   /* verde-bandeira refinado */
+            --color-primary-600: #00713A;   /* verde profundo */
+            --color-secondary-500: #2B5BA8; /* azul */
+            --color-success-500: #00924A;
+            --color-warning-500: #E0A500;   /* amarelo-ouro */
+            --color-danger-500: #C0392B;
+            --color-danger-600: #96281B;
+
+            --color-neutral-0: #FFFFFF;
+            --color-neutral-50: #F6FBF7;
+            --color-neutral-100: #EEF6F0;
+            --color-neutral-200: #DBEADF;
+            --color-neutral-500: #5C6B61;
+            --color-neutral-700: #143521;   /* texto: verde escuro */
+            --color-neutral-900: #07210F;
+            --color-surface: #FFFFFF;
+            --color-background: #F3FAF5;
+
+            --status-livre: #00924A;
+            --status-em-uso: #2B5BA8;
+            --status-proximo: #E0A500;
+            --status-vencido: #C0392B;
+            --status-contingencia: #5B3FA8;
+
+            --shadow-color: rgba(7, 33, 15, 0.12);
+
+            /* Destaque dourado nos selos */
+            --badge-bg: color-mix(in srgb, var(--color-warning-500) 16%, var(--surface-color) 84%);
+            --badge-text: color-mix(in srgb, var(--color-warning-500) 68%, var(--color-neutral-900) 32%);
+            --badge-border: color-mix(in srgb, var(--color-warning-500) 34%, transparent);
+
+            --modal-bg: color-mix(in srgb, var(--color-surface) 96%, #ffffff 4%);
+            --modal-border: color-mix(in srgb, var(--color-neutral-900) 10%, transparent);
+            --modal-shadow: 0 30px 80px rgba(7, 33, 15, 0.18);
+            --modal-overlay: color-mix(in srgb, var(--color-neutral-900) 34%, transparent);
+            --modal-header-bg: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 96%, #ffffff 4%), var(--color-surface));
+            --modal-footer-bg: color-mix(in srgb, var(--color-surface) 92%, var(--color-neutral-100) 8%);
+            --modal-divider: color-mix(in srgb, var(--color-neutral-900) 12%, transparent);
+
+            /* Login: leve degradê verde → amarelo → azul */
+            --login-bg: linear-gradient(135deg,
+                color-mix(in srgb, var(--color-primary-500) 12%, var(--surface-color) 88%),
+                color-mix(in srgb, var(--color-warning-500) 13%, var(--surface-color) 87%) 52%,
+                color-mix(in srgb, var(--color-secondary-500) 12%, var(--surface-color) 88%));
+            --login-card-bg: var(--color-surface);
+            --login-title: var(--color-primary-600);
+            --login-subtitle: var(--color-neutral-900);
+            --login-label: var(--color-neutral-700);
+            --login-input-bg: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary-500) 8%);
+            --login-feedback-bg: color-mix(in srgb, var(--color-primary-500) 4%, transparent);
+            --login-logo-filter: none;
+
+            --glass-blur: blur(14px);
+            --glass-bg: color-mix(in srgb, var(--surface-color) 82%, transparent);
+            --glass-bg-strong: color-mix(in srgb, var(--surface-color) 92%, transparent);
+            --glass-border: color-mix(in srgb, var(--color-warning-500) 22%, transparent);
+            --glass-shadow: 0 24px 44px rgba(7, 33, 15, 0.18);
+
+            /* Sidebar verde-bandeira encerrando em azul */
+            --sidebar-bg: linear-gradient(180deg, #009C3B 0%, #00803A 46%, color-mix(in srgb, #00220F 68%, #002776 32%) 100%);
+            --sidebar-border-color: rgba(255, 223, 0, 0.22);
+            --sidebar-menu-hover-bg: color-mix(in srgb, #FFDF00 16%, transparent);
+            --sidebar-menu-active-bg: color-mix(in srgb, #FFDF00 26%, transparent);
+            --sidebar-logout-bg: rgba(255,255,255,0.12);
+            --sidebar-logout-border: rgba(255, 223, 0, 0.30);
+        }
+        /* Acento dourado no item ativo/hover da sidebar (tema Copa) */
+        [data-theme="copa"] .sidebar-menu a:hover,
+        [data-theme="copa"] .sidebar-menu a.active {
+            border-left-color: #FFDF00;
+        }
+
         /* Achados e Perdidos */
         .glass-card {
             background: var(--glass-bg);
