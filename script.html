@@ -10374,6 +10374,46 @@
             campo.addEventListener('input', aplicarMascara);
             aplicarMascara();
         }
+        function criarBlocoMovimentacao(item) {
+            const bloco = document.createElement('div');
+            bloco.className = 'movimentacao-item';
+            const responsavelTexto = item.responsavel ? item.responsavel : 'Não informado';
+            const assinaturaSrc = montarFonteAssinaturaCliente(item.assinatura, item.assinaturaMime || 'image/png');
+            const assinaturaHtml = assinaturaSrc
+                ? `<span class="mov-assinatura-preview"><img src="${assinaturaSrc}" alt="Assinatura de ${responsavelTexto}"></span>`
+                : `<span class="mov-assinatura-texto">${responsavelTexto}</span>`;
+            const itensDetalhe = normalizarListaItensMovimentacao(item.itens);
+            const itensHtml = itensDetalhe.length
+                ? `<ul class="movimentacao-itens-detalhe">${itensDetalhe.map(it => `<li>${Number(it.quantidade)}x ${it.descricao}</li>`).join('')}</ul>`
+                : '';
+            bloco.innerHTML = `
+                <div class="movimentacao-header">
+                    <span>${formatarTituloMovimento(item.tipo)}</span>
+                    <span>${formatarData(item.data)} ${item.hora}</span>
+                </div>
+                <div class="movimentacao-meta">
+                    <span><strong>Descrição:</strong> ${item.descricao}</span>
+                    <span class="mov-assinatura-bloco"><strong>Assinatura:</strong> ${assinaturaHtml}</span>
+                </div>
+                ${itensHtml}
+            `;
+            return bloco;
+        }
+        // Atualiza a lista de movimentações e o inventário no cliente sem aguardar o servidor,
+        // priorizando a percepção de rapidez. A reconciliação com o servidor ocorre em segundo plano.
+        function aplicarMovimentacaoOtimista(id, novaMovimentacao) {
+            if (!elementos.movimentacoesList) return;
+            movimentacoesRegistradas = Array.isArray(movimentacoesRegistradas)
+                ? movimentacoesRegistradas.concat([novaMovimentacao])
+                : [novaMovimentacao];
+            const placeholder = elementos.movimentacoesList.querySelector('.info-box');
+            if (placeholder) {
+                placeholder.remove();
+            }
+            elementos.movimentacoesList.appendChild(criarBlocoMovimentacao(novaMovimentacao));
+            movimentacaoInventarioAtual = consolidarInventarioMovimentacao(movimentacaoVolumesBase, movimentacoesRegistradas);
+            atualizarResumoItensMovimentacao(movimentacaoVolumesBase, movimentacaoInventarioAtual, movimentacoesRegistradas);
+        }
         async function renderizarMovimentacoes(id) {
             if (!elementos.movimentacoesList) return;
             const armario = obterArmarioPorId(id) || estado.armarios.find(item => normalizarIdentificador(item.idPlanilha) === normalizarIdentificador(id));
@@ -10430,29 +10470,7 @@
                 return;
             }
             lista.forEach(item => {
-                const bloco = document.createElement('div');
-                bloco.className = 'movimentacao-item';
-                const responsavelTexto = item.responsavel ? item.responsavel : 'Não informado';
-                const assinaturaSrc = montarFonteAssinaturaCliente(item.assinatura, item.assinaturaMime || 'image/png');
-                const assinaturaHtml = assinaturaSrc
-                    ? `<span class="mov-assinatura-preview"><img src="${assinaturaSrc}" alt="Assinatura de ${responsavelTexto}"></span>`
-                    : `<span class="mov-assinatura-texto">${responsavelTexto}</span>`;
-                const itensDetalhe = normalizarListaItensMovimentacao(item.itens);
-                const itensHtml = itensDetalhe.length
-                    ? `<ul class="movimentacao-itens-detalhe">${itensDetalhe.map(it => `<li>${Number(it.quantidade)}x ${it.descricao}</li>`).join('')}</ul>`
-                    : '';
-                bloco.innerHTML = `
-                    <div class="movimentacao-header">
-                        <span>${formatarTituloMovimento(item.tipo)}</span>
-                        <span>${formatarData(item.data)} ${item.hora}</span>
-                    </div>
-                    <div class="movimentacao-meta">
-                        <span><strong>Descrição:</strong> ${item.descricao}</span>
-                        <span class="mov-assinatura-bloco"><strong>Assinatura:</strong> ${assinaturaHtml}</span>
-                    </div>
-                    ${itensHtml}
-                `;
-                elementos.movimentacoesList.appendChild(bloco);
+                elementos.movimentacoesList.appendChild(criarBlocoMovimentacao(item));
             });
 
             if (!elementos.movItensList?.children.length) {
@@ -10497,6 +10515,17 @@
                     elementos.movSignatureField?.classList.add('invalid');
                     return;
                 }
+                // O servidor persiste apenas uma foto da movimentação (a do primeiro volume).
+                // Enviar a foto de todos os volumes só inflaria o corpo da requisição e deixaria
+                // o salvamento mais lento, então transmitimos a evidência apenas no primeiro item.
+                const itensParaEnvio = itensMovimentados.map((item, indice) => {
+                    const base = { quantidade: item.quantidade, descricao: item.descricao };
+                    if (indice === 0) {
+                        base.fotoBase64 = item.fotoBase64;
+                        base.fotoMime = item.fotoMime;
+                    }
+                    return base;
+                });
                 const dados = {
                     armarioId: identificadores?.idPlanilha || '',
                     numeroArmario: identificadores?.numeroArmario || '',
@@ -10506,15 +10535,33 @@
                     responsavel: responsavelRegistro,
                     data: elementos.movData.value,
                     hora: elementos.movHora.value,
-                    itens: itensMovimentados,
+                    itens: itensParaEnvio,
                     assinaturaBase64: assinaturaMov.dataUrl || '',
                     assinaturaMime: assinaturaMov.mime || 'image/png'
                 };
+                const armarioAlvo = movimentacaoArmarioAtual;
                 const resultado = await callGoogleScript('salvarMovimentacao', dados);
                 if (resultado.success) {
-                    await renderizarMovimentacoes(movimentacaoArmarioAtual);
+                    // Feedback imediato: o registro já foi confirmado pelo servidor, então
+                    // mostramos o sucesso e liberamos o formulário sem esperar a releitura.
                     mostrarSucesso('Movimentação registrada com sucesso');
                     reproduzirSomMovimentacao('sucesso');
+
+                    // Atualização otimista da lista/inventário com os dados que já temos no cliente.
+                    aplicarMovimentacaoOtimista(armarioAlvo, {
+                        tipo: tipoSelecionado,
+                        data: dados.data,
+                        hora: dados.hora,
+                        descricao: observacaoMov,
+                        responsavel: responsavelRegistro,
+                        itens: itensMovimentados.map(item => ({
+                            quantidade: item.quantidade,
+                            descricao: item.descricao
+                        })),
+                        assinatura: assinaturaMov.dataUrl || assinaturaMov.base64 || '',
+                        assinaturaMime: assinaturaMov.mime || 'image/png'
+                    });
+
                     elementos.movimentacaoForm.reset();
                     elementos.movTipo.value = '';
                     if (elementos.movObservacao) {
@@ -10528,6 +10575,12 @@
                     elementos.movHora.value = padraoLocal.hora;
                     ativarAbaMovimentacao('');
                     mostrarPassoMovimentacao(0);
+
+                    // Reconciliação em segundo plano: garante que a lista reflita exatamente
+                    // o servidor (ids, fotos, normalizações) sem bloquear a percepção do usuário.
+                    renderizarMovimentacoes(armarioAlvo).catch(erro => {
+                        console.warn('Falha ao sincronizar movimentações após o registro:', erro);
+                    });
                 } else {
                     notificarErroPadrao(resultado);
                 }
