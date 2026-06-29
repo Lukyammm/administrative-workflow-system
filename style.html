@@ -409,6 +409,75 @@
             border-left-color: #FFDF00;
         }
 
+        /* ===== Tema Copa — destaque do Monitor / Brasil ===== */
+        /* Fundo ambiente com verde, amarelo e azul bem suaves */
+        [data-theme="copa"] .main-content {
+            background:
+                radial-gradient(1200px 460px at 6% -12%, color-mix(in srgb, #009C3B 14%, transparent), transparent 60%),
+                radial-gradient(1000px 420px at 104% -6%, color-mix(in srgb, #002776 12%, transparent), transparent 56%),
+                radial-gradient(1000px 520px at 50% 118%, color-mix(in srgb, #FFDF00 12%, transparent), transparent 62%);
+        }
+        /* Título da página com degradê verde → azul */
+        [data-theme="copa"] .header-title h1 {
+            background: linear-gradient(120deg, #007A33 0%, #00A046 42%, #1565C0 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+        /* Faixa da bandeira sob o cabeçalho */
+        [data-theme="copa"] .header {
+            border-bottom: 0;
+        }
+        [data-theme="copa"] .header::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 3px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #009C3B 0 33.3%, #FFDF00 33.3% 66.6%, #002776 66.6% 100%);
+            opacity: 0.9;
+        }
+        /* Banner da Copa no topo do Monitor (somente quando a aba está ativa) */
+        [data-theme="copa"] #dashboard.page.active::before {
+            content: "🇧🇷  C O P A  D O  M U N D O   ·   V A M O S ,  B R A S I L  🏆";
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            min-height: 56px;
+            padding: 10px 18px;
+            margin-bottom: var(--space-6);
+            border-radius: 16px;
+            font-weight: 800;
+            font-size: 0.95rem;
+            letter-spacing: 0.16em;
+            color: #FFFFFF;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+            background:
+                repeating-linear-gradient(45deg, rgba(255, 223, 0, 0.16) 0 16px, transparent 16px 32px),
+                linear-gradient(120deg, #009C3B 0%, #007A33 44%, #002776 100%);
+            border: 1px solid rgba(255, 223, 0, 0.55);
+            box-shadow: 0 16px 34px color-mix(in srgb, #009C3B 26%, transparent);
+        }
+        /* Filtro "Todos" ativo com as cores da bandeira */
+        [data-theme="copa"] .filter-btn[data-filter="todos"].active {
+            background: linear-gradient(120deg, #009C3B 0%, #00853A 42%, #1B4FA0 100%);
+            color: #FFFFFF;
+        }
+        /* Hero cards: brilho um pouco mais vivo no tema Copa */
+        [data-theme="copa"] .cards-hero .card {
+            border-top-width: 5px;
+        }
+        @media (max-width: 600px) {
+            [data-theme="copa"] #dashboard.page.active::before {
+                letter-spacing: 0.06em;
+                font-size: 0.78rem;
+            }
+        }
+
         /* Achados e Perdidos */
         .glass-card {
             background: var(--glass-bg);
