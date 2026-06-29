@@ -1,11 +1,8 @@
 <script>
-        // URL do Google Apps Script.
-        // É injetada automaticamente pelo servidor em window.SCRIPT_URL (ver doGet/index.html),
-        // refletindo sempre a implantação atual vinculada à planilha. A URL fixa abaixo é só
-        // um fallback caso a injeção falhe.
-        const SCRIPT_URL = (typeof window !== 'undefined' && window.SCRIPT_URL)
-            ? window.SCRIPT_URL
-            : 'https://script.google.com/macros/s/AKfycbzbGb6sQR1auYsyTB-kwPos7Cd7swLuTUDiAzzpwTPW2cj76ykYzKYgBDXA-g5ef7pbpw/exec';
+        // URL do Google Apps Script, injetada automaticamente pelo servidor em
+        // window.SCRIPT_URL (ver doGet/index.html). Reflete sempre a implantação
+        // atual vinculada à planilha — não é preciso escrever nenhum link aqui.
+        const SCRIPT_URL = (typeof window !== 'undefined' && window.SCRIPT_URL) || '';
         // Estado da aplicação
         function criarEstadoLiberacaoInicial() {
             return {
