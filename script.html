@@ -135,6 +135,18 @@
             'getNotificacoes', 'getEstatisticas', 'getConfig'
         ]);
 
+        // Ações que NÃO devem ser enfileiradas offline — dependem da resposta imediata
+        // para funcionar corretamente (autenticação, dados de formulário, geração de arquivo).
+        const acoesNaoEnfileriaveis = new Set([
+            'autenticarUsuario',
+            'verificarInicializacao',
+            'inicializarPlanilha',
+            'gerarTermoPDFTemporario',
+            'buscarPacienteBaseVitae',
+            'executarBackupSistema',
+            'excluirArquivoTemporario'
+        ]);
+
         const modoOffline = {
             _online: navigator.onLine,
             _sincronizando: false,
@@ -164,7 +176,7 @@
                 bar.setAttribute('role', 'status');
                 bar.setAttribute('aria-live', 'polite');
                 bar.innerHTML = `
-                    <span id="offline-status-icon"><i class="fas fa-wifi-slash"></i></span>
+                    <span id="offline-status-icon"><i class="fas fa-triangle-exclamation"></i></span>
                     <span id="offline-status-text"></span>
                     <button id="offline-sync-btn" type="button" title="Tentar sincronizar agora" style="display:none">
                         <i class="fas fa-rotate"></i>
@@ -189,7 +201,7 @@
                 let visivel = true;
                 if (!this._online) {
                     bar.className = 'offline-bar offline-bar--offline';
-                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-wifi-slash"></i>';
+                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-triangle-exclamation"></i>';
                     if (textEl) textEl.textContent = pendentes > 0
                         ? `Sem conexão — ${pendentes} operaç${pendentes === 1 ? 'ão pendente' : 'ões pendentes'}`
                         : 'Sem conexão — dados em cache';
@@ -2494,6 +2506,10 @@
                         return dadosOffline;
                     }
                     return { success: false, error: 'Sem conexão e dados não disponíveis no cache.', _offline: true };
+                }
+                // Ações que dependem da resposta imediata não podem ser enfileiradas
+                if (acoesNaoEnfileriaveis.has(action)) {
+                    return { success: false, error: 'Esta operação requer conexão com o servidor.', _offline: true };
                 }
                 // Ação de escrita: enfileira para sincronização posterior
                 modoOffline.enfileirar(action, payload);
