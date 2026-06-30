@@ -983,10 +983,6 @@ function inicializarPlanilha() {
       {
         nome: 'Movimentações',
         cabecalhos: ['ID', 'ArmarioID', 'NumeroArmario', 'Tipo', 'Descricao', 'Responsavel', 'Data', 'Hora', 'DataHoraRegistro', 'Status']
-      },
-      {
-        nome: 'Config',
-        cabecalhos: ['Chave', 'Valor', 'Descrição', 'Data Atualização']
       }
     ];
     
@@ -1625,8 +1621,7 @@ function handlePost(e) {
     cadastrarPertencePerdido: true,
     atualizarPertencePerdido: true,
     registrarContatoPertence: true,
-    excluirPertencePerdido: true,
-    salvarConfig: true
+    excluirPertencePerdido: true
   };
 
   if (acoesComLock[action] && (!e.parameter._lockApplied || e.parameter._lockApplied !== '1')) {
@@ -1740,14 +1735,6 @@ function handlePost(e) {
       
       case 'getUnidades':
         return ContentService.createTextOutput(JSON.stringify(getUnidades()))
-          .setMimeType(ContentService.MimeType.JSON);
-
-      case 'getConfig':
-        return ContentService.createTextOutput(JSON.stringify(getConfig()))
-          .setMimeType(ContentService.MimeType.JSON);
-
-      case 'salvarConfig':
-        return ContentService.createTextOutput(JSON.stringify(salvarConfig(e.parameter)))
           .setMimeType(ContentService.MimeType.JSON);
 
       case 'getSetores':
@@ -4373,104 +4360,6 @@ function criarArmariosUso(armarios) {
 }
 
 // Funções para Unidades
-// ===== Configuração / Branding white-label =====
-// Valores padrão usados quando a aba Config ainda não tem a chave (mantém
-// instalações antigas funcionando e serve de seed para novas instituições).
-var CONFIG_DEFAULTS = {
-  APP_NAME: 'Cosign',
-  HOSPITAL_NAME: 'Hospital Universitário do Ceará',
-  HOSPITAL_SHORT: 'HUC',
-  HOSPITAL_LOGO_ID: '',
-  BRAND_COLOR: '#3B82F6',
-  PRINT_BADGE: 'Guarda Volumes - NAC HUC'
-};
-
-function limparCacheConfig() {
-  limparCaches(montarChaveCache('config'));
-}
-
-function getConfig() {
-  return executarComCache(montarChaveCache('config'), CACHE_TTL_PADRAO, function() {
-    try {
-      var config = {};
-      // começa com os defaults para nunca devolver chave faltando
-      for (var chavePadrao in CONFIG_DEFAULTS) {
-        if (Object.prototype.hasOwnProperty.call(CONFIG_DEFAULTS, chavePadrao)) {
-          config[chavePadrao] = CONFIG_DEFAULTS[chavePadrao];
-        }
-      }
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var sheet = ss.getSheetByName('Config');
-      if (sheet && sheet.getLastRow() >= 2) {
-        var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-        data.forEach(function(row) {
-          var chave = (row[0] || '').toString().trim();
-          if (chave) {
-            config[chave] = row[1];
-          }
-        });
-      }
-      return { success: true, data: config };
-    } catch (error) {
-      registrarLog('ERRO', `Erro ao buscar configuração: ${error.toString()}`);
-      return { success: false, error: error.toString(), data: CONFIG_DEFAULTS };
-    }
-  });
-}
-
-function salvarConfig(dados) {
-  try {
-    var permissao = validarPermissaoAdmin(dados);
-    if (!permissao.ok) {
-      return { success: false, error: permissao.error };
-    }
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Config');
-    if (!sheet) {
-      return { success: false, error: 'Aba de configuração não encontrada. Execute a inicialização.' };
-    }
-
-    // Se veio um logo em base64, salva no Drive e guarda o fileId.
-    if (dados.logoBase64) {
-      var logoNome = gerarNomeArquivoEvidencia('hospital_logo', 'branding');
-      var logoArquivo = salvarImagemBase64EmPasta(dados.logoBase64, dados.logoMime, logoNome, PASTA_DRIVE_ID);
-      if (logoArquivo && logoArquivo.id) {
-        dados.HOSPITAL_LOGO_ID = logoArquivo.id;
-      }
-    }
-
-    // Apenas chaves conhecidas são gravadas.
-    var chavesPermitidas = ['APP_NAME', 'HOSPITAL_NAME', 'HOSPITAL_SHORT', 'HOSPITAL_LOGO_ID', 'BRAND_COLOR', 'PRINT_BADGE'];
-    var dataAtualizacao = obterDataHoraAtualFormatada().dataHoraIso;
-
-    var lastRow = sheet.getLastRow();
-    var existentes = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(function(r) {
-      return (r[0] || '').toString().trim();
-    }) : [];
-
-    chavesPermitidas.forEach(function(chave) {
-      if (!Object.prototype.hasOwnProperty.call(dados, chave)) return;
-      var valor = dados[chave];
-      var indice = existentes.indexOf(chave);
-      if (indice !== -1) {
-        var linha = indice + 2; // +1 cabeçalho, +1 base 0
-        sheet.getRange(linha, 2).setValue(valor);
-        sheet.getRange(linha, 4).setValue(dataAtualizacao);
-      } else {
-        sheet.appendRow([chave, valor, '', dataAtualizacao]);
-        existentes.push(chave);
-      }
-    });
-
-    registrarLog('CONFIG', 'Configuração do app atualizada');
-    limparCacheConfig();
-    return { success: true, message: 'Configuração salva com sucesso', data: getConfig().data };
-  } catch (error) {
-    registrarLog('ERRO', `Erro ao salvar configuração: ${error.toString()}`);
-    return { success: false, error: error.toString() };
-  }
-}
-
 function getUnidades() {
   return executarComCache(montarChaveCache('unidades'), CACHE_TTL_PADRAO, function() {
     try {
@@ -5979,14 +5868,6 @@ function montarFonteAssinatura(base64, mimePadrao) {
 
 function criarHTMLTermo(dadosTermo) {
   var hospitalNome = 'Hospital Universitário do Ceará';
-  try {
-    var configHospital = getConfig();
-    if (configHospital && configHospital.success && configHospital.data && configHospital.data.HOSPITAL_NAME) {
-      hospitalNome = configHospital.data.HOSPITAL_NAME;
-    }
-  } catch (erroConfigPdf) {
-    // mantém o nome padrão se a config não puder ser lida
-  }
   var orientacoesPredefinidas = [
     'Os meus pertences ficam sob guarda e responsabilidade da unidade; os itens que estou levando para o leito permanecem sob minha responsabilidade.',
     'Em caso de piora clínica, o serviço social/NAC entrará em contato com a família para recolher os pertences;',
