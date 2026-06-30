@@ -97,9 +97,7 @@
             rascunhoArmario: 'locknac_rascunho_armario',
             rascunhoTermo: 'locknac_rascunho_termo',
             preferenciasCabecalho: 'locknac_preferencias_cabecalho',
-            tema: 'locknac_tema',
-            filaOffline: 'locknac_fila_offline',
-            cacheEstavel: 'locknac_cache_estavel'
+            tema: 'locknac_tema'
         };
         const CAMADAS = {
             modal: 850,
@@ -255,10 +253,17 @@
             },
 
             lerCache(chave) {
+                const storage = obterArmazenamentoLocal();
+                if (!storage) return null;
+                let cacheAtual;
                 try {
-                    const storage = obterArmazenamentoLocal();
-                    if (!storage) return null;
-                    const cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
+                    cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
+                } catch (e) {
+                    // JSON corrompido — descarta tudo para não bloquear uso futuro
+                    try { storage.removeItem(OFFLINE_CACHE_KEY); } catch (_) {}
+                    return null;
+                }
+                try {
                     const entrada = cacheAtual[chave];
                     if (!entrada) return null;
                     if (Date.now() - entrada.salvoEm > OFFLINE_CACHE_TTL_MS) {
@@ -311,35 +316,44 @@
                 this._sincronizando = true;
                 this._atualizarIndicador();
 
+                const MAX_TENTATIVAS = 5;
                 const fila = [...this._filaSincronizacao];
-                const erros = [];
+                let sucessos = 0;
+                const descartados = [];
 
                 for (const item of fila) {
                     try {
                         item.tentativas = (item.tentativas || 0) + 1;
+                        if (item.tentativas > MAX_TENTATIVAS) {
+                            // Descarta operações que falharam repetidamente para não ficar infinito
+                            this._filaSincronizacao = this._filaSincronizacao.filter(i => i.id !== item.id);
+                            this._salvarFila();
+                            descartados.push(item);
+                            continue;
+                        }
                         const resposta = await callGoogleScript(item.action, item.payload, { _ignorarOffline: true });
                         if (resposta && resposta.success) {
                             this._filaSincronizacao = this._filaSincronizacao.filter(i => i.id !== item.id);
-                        } else {
-                            erros.push(item);
+                            this._salvarFila(); // persiste após cada sucesso para evitar reenvio se a página fechar
+                            sucessos++;
                         }
                     } catch (e) {
-                        erros.push(item);
+                        console.warn('[offline] falha ao sincronizar item:', item.action, e);
                     }
                 }
 
-                this._salvarFila();
                 this._sincronizando = false;
                 this._atualizarIndicador();
 
-                if (erros.length === 0 && fila.length > 0) {
+                if (descartados.length > 0) {
+                    console.warn('[offline] operações descartadas após exceder tentativas:', descartados.map(i => i.action));
+                }
+                if (sucessos > 0 && this._filaSincronizacao.length === 0) {
                     mostrarSucesso('Dados sincronizados com sucesso!');
                     limparCacheLeiturasCliente();
                     if (typeof carregarDadosIniciais === 'function') {
                         carregarDadosIniciais().catch(() => {});
                     }
-                } else if (erros.length > 0) {
-                    console.warn('[offline] itens com falha na sincronização:', erros.length);
                 }
             }
         };
