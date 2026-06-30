@@ -125,6 +125,240 @@
         const cacheChamadasLeitura = new Map();
         const acoesLeituraComCache = new Set(['getArmarios', 'getUnidades', 'getSetores', 'getUsuarios', 'getNotificacoes']);
 
+        // ── Módulo Offline ────────────────────────────────────────────────────────
+        const OFFLINE_CACHE_KEY = 'locknac_offline_cache';
+        const OFFLINE_QUEUE_KEY = 'locknac_offline_queue';
+        const OFFLINE_CACHE_TTL_MS = 1000 * 60 * 60 * 4; // 4 horas
+
+        const acoesLeituraOffline = new Set([
+            'getArmarios', 'getUnidades', 'getSetores', 'getUsuarios',
+            'getNotificacoes', 'getEstatisticas', 'getConfig'
+        ]);
+
+        // Ações que NÃO devem ser enfileiradas offline — dependem da resposta imediata
+        const acoesNaoEnfileriaveis = new Set([
+            'autenticarUsuario',
+            'verificarInicializacao',
+            'inicializarPlanilha',
+            'gerarTermoPDFTemporario',
+            'buscarPacienteBaseVitae',
+            'executarBackupSistema',
+            'excluirArquivoTemporario'
+        ]);
+
+        const modoOffline = {
+            _online: navigator.onLine,
+            _sincronizando: false,
+            _filaSincronizacao: [],
+            _indicador: null,
+            _tentativaSincronizacaoId: null,
+
+            get online() { return this._online; },
+
+            inicializar() {
+                this._filaSincronizacao = this._carregarFila();
+                window.addEventListener('online', () => this._aoConectar());
+                window.addEventListener('offline', () => this._aoDesconectar());
+                this._online = navigator.onLine;
+                this._criarIndicador();
+                this._atualizarIndicador();
+                if (this._filaSincronizacao.length > 0 && this._online) {
+                    setTimeout(() => this.sincronizar(), 2000);
+                }
+            },
+
+            _criarIndicador() {
+                const existente = document.getElementById('offline-status-bar');
+                if (existente) { this._indicador = existente; return; }
+                const bar = document.createElement('div');
+                bar.id = 'offline-status-bar';
+                bar.setAttribute('role', 'status');
+                bar.setAttribute('aria-live', 'polite');
+                bar.innerHTML = `
+                    <span id="offline-status-icon"><i class="fas fa-triangle-exclamation"></i></span>
+                    <span id="offline-status-text"></span>
+                    <button id="offline-sync-btn" type="button" title="Tentar sincronizar agora" style="display:none">
+                        <i class="fas fa-rotate"></i>
+                    </button>
+                `;
+                document.body.appendChild(bar);
+                const btn = document.getElementById('offline-sync-btn');
+                if (btn) {
+                    btn.addEventListener('click', () => this.sincronizar());
+                }
+                this._indicador = bar;
+            },
+
+            _atualizarIndicador() {
+                const bar = this._indicador || document.getElementById('offline-status-bar');
+                if (!bar) return;
+                const iconEl = document.getElementById('offline-status-icon');
+                const textEl = document.getElementById('offline-status-text');
+                const btnEl = document.getElementById('offline-sync-btn');
+                const pendentes = this._filaSincronizacao.length;
+
+                let visivel = true;
+                if (!this._online) {
+                    bar.className = 'offline-bar offline-bar--offline';
+                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-triangle-exclamation"></i>';
+                    if (textEl) textEl.textContent = pendentes > 0
+                        ? `Sem conexão — ${pendentes} operaç${pendentes === 1 ? 'ão pendente' : 'ões pendentes'}`
+                        : 'Sem conexão — dados em cache';
+                    if (btnEl) btnEl.style.display = 'none';
+                    bar.style.display = 'flex';
+                } else if (this._sincronizando) {
+                    bar.className = 'offline-bar offline-bar--syncing';
+                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-rotate fa-spin"></i>';
+                    if (textEl) textEl.textContent = 'Sincronizando...';
+                    if (btnEl) btnEl.style.display = 'none';
+                    bar.style.display = 'flex';
+                } else if (pendentes > 0) {
+                    bar.className = 'offline-bar offline-bar--pending';
+                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-clock-rotate-left"></i>';
+                    if (textEl) textEl.textContent = `${pendentes} operaç${pendentes === 1 ? 'ão' : 'ões'} aguardando sincronização`;
+                    if (btnEl) btnEl.style.display = '';
+                    bar.style.display = 'flex';
+                } else {
+                    bar.style.display = 'none';
+                    visivel = false;
+                }
+                document.body.classList.toggle('offline-bar-visible', visivel);
+            },
+
+            _aoConectar() {
+                this._online = true;
+                this._atualizarIndicador();
+                if (this._filaSincronizacao.length > 0) {
+                    clearTimeout(this._tentativaSincronizacaoId);
+                    this._tentativaSincronizacaoId = setTimeout(() => this.sincronizar(), 1500);
+                }
+                limparCacheLeiturasCliente();
+            },
+
+            _aoDesconectar() {
+                this._online = false;
+                this._atualizarIndicador();
+            },
+
+            salvarCache(action, chave, resposta) {
+                try {
+                    const storage = obterArmazenamentoLocal();
+                    if (!storage) return;
+                    const cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
+                    cacheAtual[chave] = { resposta, action, salvoEm: Date.now() };
+                    storage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(cacheAtual));
+                } catch (e) {
+                    console.warn('[offline] falha ao salvar cache:', e);
+                }
+            },
+
+            lerCache(chave) {
+                const storage = obterArmazenamentoLocal();
+                if (!storage) return null;
+                let cacheAtual;
+                try {
+                    cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
+                } catch (e) {
+                    // JSON corrompido — descarta tudo para não bloquear uso futuro
+                    try { storage.removeItem(OFFLINE_CACHE_KEY); } catch (_) {}
+                    return null;
+                }
+                try {
+                    const entrada = cacheAtual[chave];
+                    if (!entrada) return null;
+                    if (Date.now() - entrada.salvoEm > OFFLINE_CACHE_TTL_MS) {
+                        delete cacheAtual[chave];
+                        storage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(cacheAtual));
+                        return null;
+                    }
+                    return { ...entrada.resposta, _doCacheOffline: true };
+                } catch (e) {
+                    return null;
+                }
+            },
+
+            enfileirar(action, payload) {
+                const item = {
+                    id: Date.now() + '-' + Math.random().toString(36).slice(2),
+                    action,
+                    payload,
+                    criadoEm: Date.now(),
+                    tentativas: 0
+                };
+                this._filaSincronizacao.push(item);
+                this._salvarFila();
+                this._atualizarIndicador();
+                return item.id;
+            },
+
+            _salvarFila() {
+                try {
+                    const storage = obterArmazenamentoLocal();
+                    if (!storage) return;
+                    storage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(this._filaSincronizacao));
+                } catch (e) {
+                    console.warn('[offline] falha ao salvar fila:', e);
+                }
+            },
+
+            _carregarFila() {
+                try {
+                    const storage = obterArmazenamentoLocal();
+                    if (!storage) return [];
+                    return JSON.parse(storage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+                } catch (e) {
+                    return [];
+                }
+            },
+
+            async sincronizar() {
+                if (this._sincronizando || !this._online || this._filaSincronizacao.length === 0) return;
+                this._sincronizando = true;
+                this._atualizarIndicador();
+
+                const MAX_TENTATIVAS = 5;
+                const fila = [...this._filaSincronizacao];
+                let sucessos = 0;
+                const descartados = [];
+
+                for (const item of fila) {
+                    try {
+                        item.tentativas = (item.tentativas || 0) + 1;
+                        if (item.tentativas > MAX_TENTATIVAS) {
+                            // Descarta operações que falharam repetidamente para não ficar infinito
+                            this._filaSincronizacao = this._filaSincronizacao.filter(i => i.id !== item.id);
+                            this._salvarFila();
+                            descartados.push(item);
+                            continue;
+                        }
+                        const resposta = await callGoogleScript(item.action, item.payload, { _ignorarOffline: true });
+                        if (resposta && resposta.success) {
+                            this._filaSincronizacao = this._filaSincronizacao.filter(i => i.id !== item.id);
+                            this._salvarFila(); // persiste após cada sucesso para evitar reenvio se a página fechar
+                            sucessos++;
+                        }
+                    } catch (e) {
+                        console.warn('[offline] falha ao sincronizar item:', item.action, e);
+                    }
+                }
+
+                this._sincronizando = false;
+                this._atualizarIndicador();
+
+                if (descartados.length > 0) {
+                    console.warn('[offline] operações descartadas após exceder tentativas:', descartados.map(i => i.action));
+                }
+                if (sucessos > 0 && this._filaSincronizacao.length === 0) {
+                    mostrarSucesso('Dados sincronizados com sucesso!');
+                    limparCacheLeiturasCliente();
+                    if (typeof carregarDadosIniciais === 'function') {
+                        carregarDadosIniciais().catch(() => {});
+                    }
+                }
+            }
+        };
+        // ── Fim Módulo Offline ───────────────────────────────────────────────────
+
         const AVATAR_OPTIONS = [
             {
                 id: 'avatar-none',
@@ -2164,6 +2398,7 @@
             inicializarTema();
             atualizarOpcoesSetorTermo();
             atualizarResponsavelMovimentacaoInfo();
+            modoOffline.inicializar();
             inicializarLogin();
         });
         function aguardar(ms) {
@@ -2252,8 +2487,11 @@
             });
 
             const usarCache = opcoes.cache !== false && acoesLeituraComCache.has(action);
+            const ehLeitura = acoesLeituraOffline.has(action);
             const ttlCache = Number.isFinite(opcoes.ttlCacheMs) && opcoes.ttlCacheMs > 0 ? opcoes.ttlCacheMs : CACHE_CHAMADAS_LEITURA_MS;
-            const chaveCache = usarCache ? criarChaveCacheChamada(action, entradas) : '';
+            const chaveCache = (usarCache || ehLeitura) ? criarChaveCacheChamada(action, entradas) : '';
+
+            // Verifica cache em memória (rápido)
             if (usarCache && chaveCache) {
                 const cacheAtual = cacheChamadasLeitura.get(chaveCache);
                 if (cacheAtual && cacheAtual.expiraEm > Date.now()) {
@@ -2262,6 +2500,34 @@
                 if (cacheAtual) {
                     cacheChamadasLeitura.delete(chaveCache);
                 }
+            }
+
+            // Se offline, serve do cache persistente (leituras) ou enfileira (escritas)
+            const ignorarOffline = opcoes._ignorarOffline === true;
+            if (!ignorarOffline && !modoOffline.online) {
+                if (ehLeitura && chaveCache) {
+                    const dadosOffline = modoOffline.lerCache(chaveCache);
+                    if (dadosOffline) {
+                        console.info(`[offline] servindo "${action}" do cache offline`);
+                        return dadosOffline;
+                    }
+                    return { success: false, error: 'Sem conexão e dados não disponíveis no cache.', _offline: true };
+                }
+                // Ações que dependem da resposta imediata não podem ser enfileiradas
+                if (acoesNaoEnfileriaveis.has(action)) {
+                    return { success: false, error: 'Esta operação requer conexão com o servidor.', _offline: true };
+                }
+                // Ação de escrita: enfileira para sincronização posterior
+                modoOffline.enfileirar(action, payload);
+                if (typeof mostrarSucesso === 'function') {
+                    mostrarSucesso('Sem conexão — operação salva e será enviada ao reconectar.');
+                }
+                return {
+                    success: true,
+                    _offline: true,
+                    _enfileirado: true,
+                    message: 'Operação salva localmente e será sincronizada quando a conexão for restaurada.'
+                };
             }
 
             let atraso = intervaloBaseConfigurado;
@@ -2293,14 +2559,21 @@
 
                     try {
                         const resposta = JSON.parse(textoResposta);
-                        if (usarCache && resposta && resposta.success && chaveCache) {
-                            cacheChamadasLeitura.set(chaveCache, {
-                                valor: resposta,
-                                expiraEm: Date.now() + ttlCache
-                            });
-                        }
-                        if (!acoesLeituraComCache.has(action) && resposta && resposta.success) {
-                            limparCacheLeiturasCliente();
+                        if (resposta && resposta.success) {
+                            // Atualiza cache em memória
+                            if (usarCache && chaveCache) {
+                                cacheChamadasLeitura.set(chaveCache, {
+                                    valor: resposta,
+                                    expiraEm: Date.now() + ttlCache
+                                });
+                            }
+                            // Persiste no cache offline para uso futuro sem conexão
+                            if (ehLeitura && chaveCache) {
+                                modoOffline.salvarCache(action, chaveCache, resposta);
+                            }
+                            if (!acoesLeituraComCache.has(action)) {
+                                limparCacheLeiturasCliente();
+                            }
                         }
                         return resposta;
                     } catch (parseError) {
@@ -2312,19 +2585,33 @@
                     const ultimaTentativa = tentativa === maxTentativas;
                     console.error(`Erro ao chamar Google Script (ação: ${action}, tentativa ${tentativa}/${maxTentativas}):`, erro);
                     if (ultimaTentativa) {
+                        // Tenta via google.script.run nativo como último recurso
                         try {
                             const respostaNativa = await executarViaGoogleScriptNativo(action, payload);
-                            if (usarCache && respostaNativa && respostaNativa.success && chaveCache) {
-                                cacheChamadasLeitura.set(chaveCache, {
-                                    valor: respostaNativa,
-                                    expiraEm: Date.now() + ttlCache
-                                });
-                            }
-                            if (!acoesLeituraComCache.has(action) && respostaNativa && respostaNativa.success) {
-                                limparCacheLeiturasCliente();
+                            if (respostaNativa && respostaNativa.success) {
+                                if (usarCache && chaveCache) {
+                                    cacheChamadasLeitura.set(chaveCache, {
+                                        valor: respostaNativa,
+                                        expiraEm: Date.now() + ttlCache
+                                    });
+                                }
+                                if (ehLeitura && chaveCache) {
+                                    modoOffline.salvarCache(action, chaveCache, respostaNativa);
+                                }
+                                if (!acoesLeituraComCache.has(action)) {
+                                    limparCacheLeiturasCliente();
+                                }
                             }
                             return respostaNativa;
                         } catch (erroNativo) {
+                            // Última chance: cache offline para leituras
+                            if (ehLeitura && chaveCache) {
+                                const dadosOffline = modoOffline.lerCache(chaveCache);
+                                if (dadosOffline) {
+                                    console.info(`[offline] fallback para cache offline após falha em "${action}"`);
+                                    return dadosOffline;
+                                }
+                            }
                             const mensagemUsuario = erroNativo && erroNativo.mensagemUsuario
                                 ? erroNativo.mensagemUsuario
                                 : (erro && erro.mensagemUsuario ? erro.mensagemUsuario : 'Erro de conexão com o servidor');
