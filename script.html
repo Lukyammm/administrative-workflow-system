@@ -125,227 +125,6 @@
         const cacheChamadasLeitura = new Map();
         const acoesLeituraComCache = new Set(['getArmarios', 'getUnidades', 'getSetores', 'getUsuarios', 'getNotificacoes']);
 
-        // ── Módulo Offline ────────────────────────────────────────────────────────
-        const OFFLINE_CACHE_KEY = 'locknac_offline_cache';
-        const OFFLINE_QUEUE_KEY = 'locknac_offline_queue';
-        const OFFLINE_CACHE_TTL_MS = 1000 * 60 * 60 * 4; // 4 horas de cache offline
-
-        const acoesLeituraOffline = new Set([
-            'getArmarios', 'getUnidades', 'getSetores', 'getUsuarios',
-            'getNotificacoes', 'getEstatisticas', 'getConfig'
-        ]);
-
-        // Ações que NÃO devem ser enfileiradas offline — dependem da resposta imediata
-        // para funcionar corretamente (autenticação, dados de formulário, geração de arquivo).
-        const acoesNaoEnfileriaveis = new Set([
-            'autenticarUsuario',
-            'verificarInicializacao',
-            'inicializarPlanilha',
-            'gerarTermoPDFTemporario',
-            'buscarPacienteBaseVitae',
-            'executarBackupSistema',
-            'excluirArquivoTemporario'
-        ]);
-
-        const modoOffline = {
-            _online: navigator.onLine,
-            _sincronizando: false,
-            _filaSincronizacao: [],
-            _indicador: null,
-            _tentativaSincronizacaoId: null,
-
-            get online() { return this._online; },
-
-            inicializar() {
-                this._filaSincronizacao = this._carregarFila();
-                window.addEventListener('online', () => this._aoConectar());
-                window.addEventListener('offline', () => this._aoDesconectar());
-                this._online = navigator.onLine;
-                this._criarIndicador();
-                this._atualizarIndicador();
-                if (this._filaSincronizacao.length > 0 && this._online) {
-                    setTimeout(() => this.sincronizar(), 2000);
-                }
-            },
-
-            _criarIndicador() {
-                const existente = document.getElementById('offline-status-bar');
-                if (existente) { this._indicador = existente; return; }
-                const bar = document.createElement('div');
-                bar.id = 'offline-status-bar';
-                bar.setAttribute('role', 'status');
-                bar.setAttribute('aria-live', 'polite');
-                bar.innerHTML = `
-                    <span id="offline-status-icon"><i class="fas fa-triangle-exclamation"></i></span>
-                    <span id="offline-status-text"></span>
-                    <button id="offline-sync-btn" type="button" title="Tentar sincronizar agora" style="display:none">
-                        <i class="fas fa-rotate"></i>
-                    </button>
-                `;
-                document.body.appendChild(bar);
-                const btn = document.getElementById('offline-sync-btn');
-                if (btn) {
-                    btn.addEventListener('click', () => this.sincronizar());
-                }
-                this._indicador = bar;
-            },
-
-            _atualizarIndicador() {
-                const bar = this._indicador || document.getElementById('offline-status-bar');
-                if (!bar) return;
-                const iconEl = document.getElementById('offline-status-icon');
-                const textEl = document.getElementById('offline-status-text');
-                const btnEl = document.getElementById('offline-sync-btn');
-                const pendentes = this._filaSincronizacao.length;
-
-                let visivel = true;
-                if (!this._online) {
-                    bar.className = 'offline-bar offline-bar--offline';
-                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-triangle-exclamation"></i>';
-                    if (textEl) textEl.textContent = pendentes > 0
-                        ? `Sem conexão — ${pendentes} operaç${pendentes === 1 ? 'ão pendente' : 'ões pendentes'}`
-                        : 'Sem conexão — dados em cache';
-                    if (btnEl) btnEl.style.display = 'none';
-                    bar.style.display = 'flex';
-                } else if (this._sincronizando) {
-                    bar.className = 'offline-bar offline-bar--syncing';
-                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-rotate fa-spin"></i>';
-                    if (textEl) textEl.textContent = 'Sincronizando...';
-                    if (btnEl) btnEl.style.display = 'none';
-                    bar.style.display = 'flex';
-                } else if (pendentes > 0) {
-                    bar.className = 'offline-bar offline-bar--pending';
-                    if (iconEl) iconEl.innerHTML = '<i class="fas fa-clock-rotate-left"></i>';
-                    if (textEl) textEl.textContent = `${pendentes} operaç${pendentes === 1 ? 'ão' : 'ões'} aguardando sincronização`;
-                    if (btnEl) btnEl.style.display = '';
-                    bar.style.display = 'flex';
-                } else {
-                    bar.style.display = 'none';
-                    visivel = false;
-                }
-                document.body.classList.toggle('offline-bar-visible', visivel);
-            },
-
-            _aoConectar() {
-                this._online = true;
-                this._atualizarIndicador();
-                if (this._filaSincronizacao.length > 0) {
-                    clearTimeout(this._tentativaSincronizacaoId);
-                    this._tentativaSincronizacaoId = setTimeout(() => this.sincronizar(), 1500);
-                }
-                limparCacheLeiturasCliente();
-            },
-
-            _aoDesconectar() {
-                this._online = false;
-                this._atualizarIndicador();
-            },
-
-            // Cache persistente de leituras
-            salvarCache(action, chave, resposta) {
-                try {
-                    const storage = obterArmazenamentoLocal();
-                    if (!storage) return;
-                    const cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
-                    cacheAtual[chave] = { resposta, action, salvoEm: Date.now() };
-                    storage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(cacheAtual));
-                } catch (e) {
-                    console.warn('[offline] falha ao salvar cache:', e);
-                }
-            },
-
-            lerCache(chave) {
-                try {
-                    const storage = obterArmazenamentoLocal();
-                    if (!storage) return null;
-                    const cacheAtual = JSON.parse(storage.getItem(OFFLINE_CACHE_KEY) || '{}');
-                    const entrada = cacheAtual[chave];
-                    if (!entrada) return null;
-                    if (Date.now() - entrada.salvoEm > OFFLINE_CACHE_TTL_MS) {
-                        delete cacheAtual[chave];
-                        storage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(cacheAtual));
-                        return null;
-                    }
-                    return { ...entrada.resposta, _doCacheOffline: true };
-                } catch (e) {
-                    return null;
-                }
-            },
-
-            // Fila de operações de escrita offline
-            enfileirar(action, payload) {
-                const item = {
-                    id: Date.now() + '-' + Math.random().toString(36).slice(2),
-                    action,
-                    payload,
-                    criadoEm: Date.now(),
-                    tentativas: 0
-                };
-                this._filaSincronizacao.push(item);
-                this._salvarFila();
-                this._atualizarIndicador();
-                return item.id;
-            },
-
-            _salvarFila() {
-                try {
-                    const storage = obterArmazenamentoLocal();
-                    if (!storage) return;
-                    storage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(this._filaSincronizacao));
-                } catch (e) {
-                    console.warn('[offline] falha ao salvar fila:', e);
-                }
-            },
-
-            _carregarFila() {
-                try {
-                    const storage = obterArmazenamentoLocal();
-                    if (!storage) return [];
-                    return JSON.parse(storage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-                } catch (e) {
-                    return [];
-                }
-            },
-
-            async sincronizar() {
-                if (this._sincronizando || !this._online || this._filaSincronizacao.length === 0) return;
-                this._sincronizando = true;
-                this._atualizarIndicador();
-
-                const fila = [...this._filaSincronizacao];
-                const erros = [];
-
-                for (const item of fila) {
-                    try {
-                        item.tentativas = (item.tentativas || 0) + 1;
-                        const resposta = await callGoogleScript(item.action, item.payload, { _ignorarOffline: true });
-                        if (resposta && resposta.success) {
-                            this._filaSincronizacao = this._filaSincronizacao.filter(i => i.id !== item.id);
-                        } else {
-                            erros.push(item);
-                        }
-                    } catch (e) {
-                        erros.push(item);
-                    }
-                }
-
-                this._salvarFila();
-                this._sincronizando = false;
-                this._atualizarIndicador();
-
-                if (erros.length === 0 && fila.length > 0) {
-                    mostrarSucesso('Dados sincronizados com sucesso!');
-                    limparCacheLeiturasCliente();
-                    if (typeof carregarDadosIniciais === 'function') {
-                        carregarDadosIniciais().catch(() => {});
-                    }
-                } else if (erros.length > 0) {
-                    console.warn('[offline] itens com falha na sincronização:', erros.length);
-                }
-            }
-        };
-        // ── Fim Módulo Offline ───────────────────────────────────────────────────
-
         const AVATAR_OPTIONS = [
             {
                 id: 'avatar-none',
@@ -510,11 +289,6 @@
             const temaFinal = temasValidos.indexOf(tema) !== -1 ? tema : 'light';
             document.documentElement.setAttribute('data-theme', temaFinal);
             atualizarBotaoTema(temaFinal);
-            // Reconcilia a cor da marca: só vale no tema base; nos temas nomeados
-            // a paleta do tema prevalece.
-            if (typeof reconciliarCorMarca === 'function') {
-                reconciliarCorMarca(temaFinal);
-            }
             if (!salvarPreferencia) return;
             const storage = obterArmazenamentoLocal();
             if (!storage) return;
@@ -1507,7 +1281,7 @@
         atualizarPainelNotificacoes(false);
         const customSelectorInstances = new WeakMap();
         const customSelectorStore = new Set();
-        const paginasRestritasUsuario = new Set(['cadastro-armarios', 'cadastro-unidades', 'usuarios', 'logs', 'backup', 'configuracoes']);
+        const paginasRestritasUsuario = new Set(['cadastro-armarios', 'cadastro-unidades', 'usuarios', 'logs', 'backup']);
         let aplicacaoInicializada = false;
         let loginInicializado = false;
         let eventosInicializados = false;
@@ -2388,11 +2162,8 @@
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             inicializarTema();
-            inicializarBranding();
-            inicializarConfigForm();
             atualizarOpcoesSetorTermo();
             atualizarResponsavelMovimentacaoInfo();
-            modoOffline.inicializar();
             inicializarLogin();
         });
         function aguardar(ms) {
@@ -2481,11 +2252,8 @@
             });
 
             const usarCache = opcoes.cache !== false && acoesLeituraComCache.has(action);
-            const ehLeitura = acoesLeituraOffline.has(action);
             const ttlCache = Number.isFinite(opcoes.ttlCacheMs) && opcoes.ttlCacheMs > 0 ? opcoes.ttlCacheMs : CACHE_CHAMADAS_LEITURA_MS;
-            const chaveCache = (usarCache || ehLeitura) ? criarChaveCacheChamada(action, entradas) : '';
-
-            // Verifica cache em memória (rápido)
+            const chaveCache = usarCache ? criarChaveCacheChamada(action, entradas) : '';
             if (usarCache && chaveCache) {
                 const cacheAtual = cacheChamadasLeitura.get(chaveCache);
                 if (cacheAtual && cacheAtual.expiraEm > Date.now()) {
@@ -2494,34 +2262,6 @@
                 if (cacheAtual) {
                     cacheChamadasLeitura.delete(chaveCache);
                 }
-            }
-
-            // Se offline, serve do cache persistente (leituras) ou enfileira (escritas)
-            const ignorarOffline = opcoes._ignorarOffline === true;
-            if (!ignorarOffline && !modoOffline.online) {
-                if (ehLeitura && chaveCache) {
-                    const dadosOffline = modoOffline.lerCache(chaveCache);
-                    if (dadosOffline) {
-                        console.info(`[offline] servindo "${action}" do cache offline`);
-                        return dadosOffline;
-                    }
-                    return { success: false, error: 'Sem conexão e dados não disponíveis no cache.', _offline: true };
-                }
-                // Ações que dependem da resposta imediata não podem ser enfileiradas
-                if (acoesNaoEnfileriaveis.has(action)) {
-                    return { success: false, error: 'Esta operação requer conexão com o servidor.', _offline: true };
-                }
-                // Ação de escrita: enfileira para sincronização posterior
-                modoOffline.enfileirar(action, payload);
-                if (typeof mostrarSucesso === 'function') {
-                    mostrarSucesso('Sem conexão — operação salva e será enviada ao reconectar.');
-                }
-                return {
-                    success: true,
-                    _offline: true,
-                    _enfileirado: true,
-                    message: 'Operação salva localmente e será sincronizada quando a conexão for restaurada.'
-                };
             }
 
             let atraso = intervaloBaseConfigurado;
@@ -2553,21 +2293,14 @@
 
                     try {
                         const resposta = JSON.parse(textoResposta);
-                        if (resposta && resposta.success) {
-                            // Atualiza cache em memória
-                            if (usarCache && chaveCache) {
-                                cacheChamadasLeitura.set(chaveCache, {
-                                    valor: resposta,
-                                    expiraEm: Date.now() + ttlCache
-                                });
-                            }
-                            // Persiste no cache offline para uso futuro sem conexão
-                            if (ehLeitura && chaveCache) {
-                                modoOffline.salvarCache(action, chaveCache, resposta);
-                            }
-                            if (!acoesLeituraComCache.has(action)) {
-                                limparCacheLeiturasCliente();
-                            }
+                        if (usarCache && resposta && resposta.success && chaveCache) {
+                            cacheChamadasLeitura.set(chaveCache, {
+                                valor: resposta,
+                                expiraEm: Date.now() + ttlCache
+                            });
+                        }
+                        if (!acoesLeituraComCache.has(action) && resposta && resposta.success) {
+                            limparCacheLeiturasCliente();
                         }
                         return resposta;
                     } catch (parseError) {
@@ -2579,33 +2312,19 @@
                     const ultimaTentativa = tentativa === maxTentativas;
                     console.error(`Erro ao chamar Google Script (ação: ${action}, tentativa ${tentativa}/${maxTentativas}):`, erro);
                     if (ultimaTentativa) {
-                        // Tenta via google.script.run nativo como último recurso
                         try {
                             const respostaNativa = await executarViaGoogleScriptNativo(action, payload);
-                            if (respostaNativa && respostaNativa.success) {
-                                if (usarCache && chaveCache) {
-                                    cacheChamadasLeitura.set(chaveCache, {
-                                        valor: respostaNativa,
-                                        expiraEm: Date.now() + ttlCache
-                                    });
-                                }
-                                if (ehLeitura && chaveCache) {
-                                    modoOffline.salvarCache(action, chaveCache, respostaNativa);
-                                }
-                                if (!acoesLeituraComCache.has(action)) {
-                                    limparCacheLeiturasCliente();
-                                }
+                            if (usarCache && respostaNativa && respostaNativa.success && chaveCache) {
+                                cacheChamadasLeitura.set(chaveCache, {
+                                    valor: respostaNativa,
+                                    expiraEm: Date.now() + ttlCache
+                                });
+                            }
+                            if (!acoesLeituraComCache.has(action) && respostaNativa && respostaNativa.success) {
+                                limparCacheLeiturasCliente();
                             }
                             return respostaNativa;
                         } catch (erroNativo) {
-                            // Última chance: cache offline para leituras
-                            if (ehLeitura && chaveCache) {
-                                const dadosOffline = modoOffline.lerCache(chaveCache);
-                                if (dadosOffline) {
-                                    console.info(`[offline] fallback para cache offline após falha em "${action}"`);
-                                    return dadosOffline;
-                                }
-                            }
                             const mensagemUsuario = erroNativo && erroNativo.mensagemUsuario
                                 ? erroNativo.mensagemUsuario
                                 : (erro && erro.mensagemUsuario ? erro.mensagemUsuario : 'Erro de conexão com o servidor');
@@ -2911,7 +2630,6 @@
                         () => carregarArmarios({ forcarAtualizacao: true, incluirTermos: false })
                     );
                 })();
-                const carregamentoConfigPromise = inicializacaoPromise.then(() => executarCarregamentoSeguro('carregar configuração', carregarConfig));
                 const carregamentoUnidadesPromise = inicializacaoPromise.then(() => executarCarregamentoSeguro('carregar unidades', carregarUnidades));
                 const carregamentoSetoresPromise = inicializacaoPromise.then(() => executarCarregamentoSeguro('carregar setores', carregarSetores));
                 const carregamentoUsuariosPromise = inicializacaoPromise.then(() => executarCarregamentoSeguro('carregar usuários', carregarUsuarios));
@@ -2924,7 +2642,6 @@
                 }
 
                 const demaisCarregamentos = await Promise.all([
-                    carregamentoConfigPromise,
                     carregamentoUnidadesPromise,
                     carregamentoSetoresPromise,
                     carregamentoUsuariosPromise,
@@ -3025,202 +2742,6 @@
                 return true;
             }
             return false;
-        }
-        // ===== Configuração / Branding white-label =====
-        const BRANDING_DEFAULTS = {
-            APP_NAME: 'Cosign',
-            HOSPITAL_NAME: 'Hospital Universitário do Ceará',
-            HOSPITAL_SHORT: 'HUC',
-            HOSPITAL_LOGO_ID: '',
-            BRAND_COLOR: '#3B82F6',
-            PRINT_BADGE: 'Guarda Volumes - NAC HUC'
-        };
-        function derivarCorEscura(hex) {
-            // escurece ~18% para servir de --color-primary-600
-            const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec((hex || '').trim());
-            if (!m) return hex;
-            const fator = 0.82;
-            const c = [1, 2, 3].map(i => Math.max(0, Math.round(parseInt(m[i], 16) * fator)));
-            return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
-        }
-        let corMarcaAtual = '';
-        // Aplica a cor da marca apenas no tema base (light). Nos temas nomeados
-        // (dark/pink/copa) a paleta do próprio tema deve prevalecer, então o
-        // override inline é removido — senão o estilo inline venceria as regras
-        // [data-theme] e quebraria a cor primária do tema.
-        function reconciliarCorMarca(tema) {
-            const raiz = document.documentElement;
-            const temaAtual = tema || raiz.getAttribute('data-theme') || 'light';
-            const cor = (corMarcaAtual || '').toString().trim();
-            if (temaAtual === 'light' && /^#[0-9a-f]{6}$/i.test(cor)) {
-                raiz.style.setProperty('--color-primary-500', cor);
-                raiz.style.setProperty('--color-primary-600', derivarCorEscura(cor));
-            } else {
-                raiz.style.removeProperty('--color-primary-500');
-                raiz.style.removeProperty('--color-primary-600');
-            }
-        }
-        function aplicarBranding(config) {
-            const cfg = Object.assign({}, BRANDING_DEFAULTS, config || {});
-            estado.config = cfg;
-            const appName = (cfg.APP_NAME || '').toString().trim() || BRANDING_DEFAULTS.APP_NAME;
-            const hospital = (cfg.HOSPITAL_NAME || '').toString().trim() || BRANDING_DEFAULTS.HOSPITAL_NAME;
-            document.title = `${appName} - Gerenciamento de Armários`;
-            document.querySelectorAll('#brand-text-login, #brand-text-sidebar').forEach(el => { el.textContent = appName; });
-            const hospitalEl = document.getElementById('sidebar-hospital-name');
-            if (hospitalEl) hospitalEl.textContent = hospital;
-            // Logo: usa o thumbnail estável do Drive quando há fileId configurado
-            const logoEl = document.getElementById('login-logo');
-            if (logoEl && cfg.HOSPITAL_LOGO_ID) {
-                logoEl.src = montarThumbDrive(`?id=${cfg.HOSPITAL_LOGO_ID}`, 240);
-                logoEl.alt = `Logo ${hospital}`;
-            }
-            // Cor da marca: guarda e aplica respeitando o tema ativo.
-            corMarcaAtual = (cfg.BRAND_COLOR || '').toString().trim();
-            reconciliarCorMarca();
-        }
-        async function carregarConfig() {
-            const resultado = await callGoogleScript('getConfig');
-            if (resultado && resultado.success && resultado.data) {
-                aplicarBranding(resultado.data);
-                return true;
-            }
-            return false;
-        }
-        // Aplica o branding cedo (tela de login) — getConfig é público.
-        async function inicializarBranding() {
-            try {
-                await carregarConfig();
-            } catch (erro) {
-                console.warn('Falha ao carregar branding, usando padrão:', erro);
-            }
-        }
-        let configLogoPendente = null; // { base64, mime } quando o admin escolhe um logo novo
-        function comprimirImagemConfig(file, maxDim = 320) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const escala = Math.min(1, maxDim / Math.max(img.width, img.height));
-                        const w = Math.round(img.width * escala);
-                        const h = Math.round(img.height * escala);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = w; canvas.height = h;
-                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                        const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-                        resolve({ base64: canvas.toDataURL(mime, 0.9), mime });
-                    };
-                    img.onerror = reject;
-                    img.src = reader.result;
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        }
-        function popularConfigForm() {
-            const cfg = Object.assign({}, BRANDING_DEFAULTS, estado.config || {});
-            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-            set('config-app-name', cfg.APP_NAME);
-            set('config-hospital-name', cfg.HOSPITAL_NAME);
-            set('config-hospital-short', cfg.HOSPITAL_SHORT);
-            set('config-print-badge', cfg.PRINT_BADGE);
-            set('config-brand-color', /^#[0-9a-f]{6}$/i.test(cfg.BRAND_COLOR) ? cfg.BRAND_COLOR : '#3B82F6');
-            set('config-brand-color-hex', cfg.BRAND_COLOR);
-            configLogoPendente = null;
-            const input = document.getElementById('config-logo-input');
-            if (input) input.value = '';
-            const preview = document.getElementById('config-logo-preview');
-            const vazio = document.getElementById('config-logo-empty');
-            if (cfg.HOSPITAL_LOGO_ID && preview) {
-                preview.src = montarThumbDrive(`?id=${cfg.HOSPITAL_LOGO_ID}`, 240);
-                preview.hidden = false;
-                if (vazio) vazio.hidden = true;
-            } else {
-                if (preview) preview.hidden = true;
-                if (vazio) vazio.hidden = false;
-            }
-            atualizarPreviewConfig();
-        }
-        function atualizarPreviewConfig() {
-            const nome = document.getElementById('config-app-name')?.value || BRANDING_DEFAULTS.APP_NAME;
-            const hosp = document.getElementById('config-hospital-name')?.value || BRANDING_DEFAULTS.HOSPITAL_NAME;
-            const cor = document.getElementById('config-brand-color')?.value || '#3B82F6';
-            const nomeEl = document.getElementById('config-preview-name');
-            const hospEl = document.getElementById('config-preview-hospital');
-            const btnEl = document.getElementById('config-preview-btn');
-            if (nomeEl) nomeEl.textContent = nome;
-            if (hospEl) hospEl.textContent = hosp;
-            if (btnEl) btnEl.style.background = cor;
-        }
-        function inicializarConfigForm() {
-            const form = document.getElementById('config-form');
-            if (!form) return;
-            const corInput = document.getElementById('config-brand-color');
-            const corHex = document.getElementById('config-brand-color-hex');
-            const logoInput = document.getElementById('config-logo-input');
-
-            ['config-app-name', 'config-hospital-name'].forEach(id => {
-                document.getElementById(id)?.addEventListener('input', atualizarPreviewConfig);
-            });
-            corInput?.addEventListener('input', () => {
-                if (corHex) corHex.value = corInput.value.toUpperCase();
-                atualizarPreviewConfig();
-            });
-            corHex?.addEventListener('input', () => {
-                if (/^#[0-9a-f]{6}$/i.test(corHex.value) && corInput) corInput.value = corHex.value;
-                atualizarPreviewConfig();
-            });
-            logoInput?.addEventListener('change', async () => {
-                const file = logoInput.files && logoInput.files[0];
-                if (!file) return;
-                try {
-                    configLogoPendente = await comprimirImagemConfig(file);
-                    const preview = document.getElementById('config-logo-preview');
-                    const vazio = document.getElementById('config-logo-empty');
-                    if (preview) { preview.src = configLogoPendente.base64; preview.hidden = false; }
-                    if (vazio) vazio.hidden = true;
-                } catch (erro) {
-                    console.error('Erro ao processar logo:', erro);
-                    mostrarErro('Não foi possível ler a imagem do logo.');
-                }
-            });
-            // Popular o form sempre que entrar na página de Configurações
-            document.querySelector('[data-page="configuracoes"]')?.addEventListener('click', () => {
-                setTimeout(popularConfigForm, 0);
-            });
-
-            form.addEventListener('submit', async (ev) => {
-                ev.preventDefault();
-                const btn = document.getElementById('config-salvar');
-                const finalizar = btn ? iniciarLoadingBotao(btn) : () => {};
-                try {
-                    const payload = {
-                        APP_NAME: document.getElementById('config-app-name')?.value.trim() || BRANDING_DEFAULTS.APP_NAME,
-                        HOSPITAL_NAME: document.getElementById('config-hospital-name')?.value.trim() || BRANDING_DEFAULTS.HOSPITAL_NAME,
-                        HOSPITAL_SHORT: document.getElementById('config-hospital-short')?.value.trim() || '',
-                        PRINT_BADGE: document.getElementById('config-print-badge')?.value.trim() || '',
-                        BRAND_COLOR: document.getElementById('config-brand-color')?.value || '#3B82F6'
-                    };
-                    if (configLogoPendente) {
-                        payload.logoBase64 = configLogoPendente.base64;
-                        payload.logoMime = configLogoPendente.mime;
-                    }
-                    const resultado = await callGoogleScript('salvarConfig', payload);
-                    if (resultado && resultado.success) {
-                        aplicarBranding(resultado.data);
-                        popularConfigForm();
-                        mostrarSucesso('Configurações salvas com sucesso.');
-                    } else {
-                        mostrarErro((resultado && resultado.error) || 'Não foi possível salvar as configurações.');
-                    }
-                } catch (erro) {
-                    console.error('Erro ao salvar configurações:', erro);
-                    mostrarErro('Não foi possível salvar as configurações.');
-                } finally {
-                    finalizar();
-                }
-            });
         }
         async function carregarSetores() {
             if (!estado.autenticado) {
@@ -3800,35 +3321,6 @@
         function mostrarAviso(mensagem) {
             return dispararToast(mensagem, 'warning', 4000);
         }
-        // Toast com janela de "Desfazer". Resolve true se o tempo expirar (ação
-        // deve prosseguir) ou false se o usuário desfizer. Pensado para tablet:
-        // barra de progresso visível, alvo de toque grande.
-        function mostrarToastDesfazer(mensagem, { ms = 6000, tipo = 'info' } = {}) {
-            const container = obterContainerToast();
-            const toast = document.createElement('div');
-            toast.className = `toast-simples toast-${tipo} toast-desfazer`;
-            toast.setAttribute('role', 'status');
-            toast.innerHTML = `
-                <span class="toast-simples-icone">${ICONES_TOAST[tipo] || ICONES_TOAST.info}</span>
-                <span class="toast-simples-texto">${mensagem}</span>
-                <button type="button" class="toast-desfazer-btn">Desfazer</button>
-                <span class="toast-desfazer-barra" style="animation-duration:${ms}ms"></span>`;
-            container.appendChild(toast);
-            requestAnimationFrame(() => toast.classList.add('visivel'));
-            return new Promise((resolve) => {
-                let resolvido = false;
-                const concluir = (prosseguir) => {
-                    if (resolvido) return;
-                    resolvido = true;
-                    clearTimeout(timer);
-                    toast.classList.remove('visivel');
-                    setTimeout(() => toast.remove(), 350);
-                    resolve(prosseguir);
-                };
-                const timer = setTimeout(() => concluir(true), ms);
-                toast.querySelector('.toast-desfazer-btn').addEventListener('click', () => concluir(false));
-            });
-        }
         function notificarErroPadrao(resultado, mensagemPadrao = 'Ocorreu um erro inesperado') {
             if (!resultado || resultado._erroNotificado) {
                 return;
@@ -3889,80 +3381,6 @@
             }
             if (elementos.sidebarBackdrop) {
                 elementos.sidebarBackdrop.addEventListener('click', fecharSidebarMobile);
-            }
-
-            // ── SIDEBAR PIN (fixar expandida no desktop) ──
-            const sidebarPinBtn = document.getElementById('sidebar-pin-btn');
-            if (sidebarPinBtn) {
-                const pinnedKey = 'cosign_sidebar_pinned';
-                const aplicarPin = (pinado) => {
-                    document.body.classList.toggle('sidebar-expandida', pinado);
-                    sidebarPinBtn.classList.toggle('pinned', pinado);
-                    sidebarPinBtn.title = pinado ? 'Soltar menu' : 'Fixar menu expandido';
-                    sidebarPinBtn.setAttribute('aria-pressed', String(pinado));
-                    localStorage.setItem(pinnedKey, pinado ? '1' : '0');
-                };
-                aplicarPin(localStorage.getItem(pinnedKey) === '1');
-                sidebarPinBtn.addEventListener('click', () => {
-                    aplicarPin(!document.body.classList.contains('sidebar-expandida'));
-                });
-            }
-
-            // ── VIEW TOGGLE: mapa/grid de armários ──
-            const viewBtnGrid = document.getElementById('view-btn-grid');
-            const viewBtnMapa = document.getElementById('view-btn-mapa');
-            const armariosContainer = document.getElementById('armarios-container');
-            if (viewBtnGrid && viewBtnMapa && armariosContainer) {
-                const viewKey = 'cosign_armarios_view';
-                const aplicarView = (modo) => {
-                    armariosContainer.classList.toggle('modo-mapa', modo === 'mapa');
-                    viewBtnGrid.classList.toggle('active', modo !== 'mapa');
-                    viewBtnMapa.classList.toggle('active', modo === 'mapa');
-                    localStorage.setItem(viewKey, modo);
-                };
-                aplicarView(localStorage.getItem(viewKey) || 'grid');
-                viewBtnGrid.addEventListener('click', () => aplicarView('grid'));
-                viewBtnMapa.addEventListener('click', () => aplicarView('mapa'));
-            }
-
-            // ── TIMELINE toggle: histórico visitantes ──
-            const hvBtnTabela = document.getElementById('hv-btn-tabela');
-            const hvBtnTimeline = document.getElementById('hv-btn-timeline');
-            if (hvBtnTabela && hvBtnTimeline) {
-                const aplicarViewHV = (modo) => {
-                    const tableContainer = document.getElementById('hv-table-container');
-                    const timelineContainer = document.getElementById('hv-timeline-container');
-                    const mostrarTimeline = modo === 'timeline';
-                    if (tableContainer) tableContainer.style.display = mostrarTimeline ? 'none' : '';
-                    if (timelineContainer) timelineContainer.style.display = mostrarTimeline ? '' : 'none';
-                    hvBtnTabela.classList.toggle('active', !mostrarTimeline);
-                    hvBtnTimeline.classList.toggle('active', mostrarTimeline);
-                    localStorage.setItem('cosign_hv_view', modo);
-                    if (mostrarTimeline) renderTimelineHistorico('visitantes');
-                };
-                aplicarViewHV(localStorage.getItem('cosign_hv_view') || 'tabela');
-                hvBtnTabela.addEventListener('click', () => aplicarViewHV('tabela'));
-                hvBtnTimeline.addEventListener('click', () => aplicarViewHV('timeline'));
-            }
-
-            // ── TIMELINE toggle: histórico acompanhantes ──
-            const haBtnTabela = document.getElementById('ha-btn-tabela');
-            const haBtnTimeline = document.getElementById('ha-btn-timeline');
-            if (haBtnTabela && haBtnTimeline) {
-                const aplicarViewHA = (modo) => {
-                    const tableContainer = document.getElementById('ha-table-container');
-                    const timelineContainer = document.getElementById('ha-timeline-container');
-                    const mostrarTimeline = modo === 'timeline';
-                    if (tableContainer) tableContainer.style.display = mostrarTimeline ? 'none' : '';
-                    if (timelineContainer) timelineContainer.style.display = mostrarTimeline ? '' : 'none';
-                    haBtnTabela.classList.toggle('active', !mostrarTimeline);
-                    haBtnTimeline.classList.toggle('active', mostrarTimeline);
-                    localStorage.setItem('cosign_ha_view', modo);
-                    if (mostrarTimeline) renderTimelineHistorico('acompanhantes');
-                };
-                aplicarViewHA(localStorage.getItem('cosign_ha_view') || 'tabela');
-                haBtnTabela.addEventListener('click', () => aplicarViewHA('tabela'));
-                haBtnTimeline.addEventListener('click', () => aplicarViewHA('timeline'));
             }
             // Seletor de perfil
             if (elementos.profileSelect) {
@@ -5328,23 +4746,6 @@
                 const nomePaciente = armario.status === 'livre'
                     ? 'Disponível'
                     : (armario.nomePaciente || '-');
-                // Selo de custódia: surfacar o status do termo direto no card de
-                // acompanhante em uso (pendente pulsa, andamento âmbar, finalizado verde).
-                let seloTermoHtml = '';
-                if (normalizarTexto(armario.tipo) === 'acompanhante'
-                    && armario.status !== 'livre'
-                    && !armarioEhContingencia(armario)) {
-                    const termoNorm = normalizarTexto(armario.termoStatus);
-                    const seloVariante = termoNorm === 'finalizado'
-                        ? 'ok'
-                        : termoNorm === 'em andamento'
-                            ? 'andamento'
-                            : 'pendente';
-                    seloTermoHtml = `<span class="armario-selo-termo ${seloVariante}">
-                            <i class="fas fa-file-signature" aria-hidden="true"></i>
-                            Termo ${formatarStatusTermo(armario.termoStatus).toLowerCase()}
-                        </span>`;
-                }
                 card.innerHTML = `
                     <div class="armario-status-bar status-${classeStatus}" aria-hidden="true"></div>
                     <div class="armario-header minimal">
@@ -5357,7 +4758,6 @@
                         </div>
                     </div>
                     <div class="armario-paciente-line" title="${nomePaciente}">${nomePaciente}</div>
-                    ${seloTermoHtml}
                 `;
                 card.addEventListener('click', () => abrirModalArmario(armario));
                 return card;
@@ -6648,118 +6048,14 @@
         }
         function exibirEstadoTabelaHistorico(tbody, mensagem, tipo = 'empty', colSpan = 11) {
             if (!tbody) return;
-            if (tipo === 'empty') {
-                const configuracoes = {
-                    'Nenhum registro disponível.': {
-                        icon: 'fas fa-inbox',
-                        title: 'Sem registros ainda',
-                        desc: 'Nenhum registro foi encontrado. Os dados aparecerão aqui quando houver movimentação.',
-                    },
-                    'Nenhum registro encontrado com os filtros selecionados.': {
-                        icon: 'fas fa-filter-circle-xmark',
-                        title: 'Nenhum resultado',
-                        desc: 'Nenhum registro corresponde aos filtros aplicados. Tente ampliar o período ou remover algum filtro.',
-                        acao: 'Limpar filtros',
-                        acaoClasse: 'historico-limpar-filtros',
-                    },
-                };
-                const cfg = configuracoes[mensagem] || { icon: 'fas fa-inbox', title: 'Vazio', desc: mensagem };
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = colSpan;
-                td.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon"><i class="${cfg.icon}" aria-hidden="true"></i></div>
-                        <div class="empty-state-title">${cfg.title}</div>
-                        <div class="empty-state-desc">${cfg.desc}</div>
-                        ${cfg.acao ? `<button class="empty-state-action ${cfg.acaoClasse}">${cfg.acao}</button>` : ''}
-                    </div>`;
-                tbody.innerHTML = '';
-                tbody.appendChild(tr);
-                if (cfg.acaoClasse === 'historico-limpar-filtros') {
-                    td.querySelector('.historico-limpar-filtros')?.addEventListener('click', () => {
-                        document.getElementById('historico-visitantes-btn-limpar')?.click();
-                        document.getElementById('historico-acompanhantes-btn-limpar')?.click();
-                    });
-                }
-            } else {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = colSpan;
-                td.textContent = mensagem;
-                td.className = tipo === 'loading' ? 'table-loading' : 'table-error';
-                tr.appendChild(td);
-                tbody.innerHTML = '';
-                tbody.appendChild(tr);
-            }
-        }
-
-        function gerarIniciais(nome) {
-            if (!nome) return '?';
-            const partes = nome.trim().split(/\s+/);
-            if (partes.length === 1) return partes[0][0].toUpperCase();
-            return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
-        }
-
-        function renderTimelineHistorico(tipo) {
-            const containerId = tipo === 'visitantes' ? 'hv-timeline-container' : 'ha-timeline-container';
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            const registros = tipo === 'visitantes'
-                ? (Array.isArray(estado.historicoVisitantes) ? estado.historicoVisitantes : [])
-                : (Array.isArray(estado.historicoAcompanhantes) ? estado.historicoAcompanhantes : []);
-
-            if (!registros.length) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon"><i class="fas fa-inbox" aria-hidden="true"></i></div>
-                        <div class="empty-state-title">Sem registros ainda</div>
-                        <div class="empty-state-desc">Os dados aparecerão aqui quando houver movimentação.</div>
-                    </div>`;
-                return;
-            }
-
-            const cores = ['#4F6F97','#5BA98C','#C67B2A','#52418F','#3B82F6','#10B981'];
-            const corPorNome = new Map();
-            let corIdx = 0;
-
-            container.innerHTML = '';
-            const fragment = document.createDocumentFragment();
-            registros.slice(0, 200).forEach(reg => {
-                if (!corPorNome.has(reg.nome)) {
-                    corPorNome.set(reg.nome, cores[corIdx % cores.length]);
-                    corIdx++;
-                }
-                const cor = corPorNome.get(reg.nome);
-                const iniciais = gerarIniciais(reg.nome);
-                const statusChipClasse = reg.status?.toLowerCase().includes('livre') ? 'chip-status-livre'
-                    : reg.status?.toLowerCase().includes('uso') ? 'chip-status-em-uso' : '';
-
-                const item = document.createElement('div');
-                item.className = 'timeline-item';
-                item.innerHTML = `
-                    <div class="timeline-avatar" style="background:${cor}" aria-label="${reg.nome || '?'}">${iniciais}</div>
-                    <div class="timeline-body">
-                        <div class="timeline-header">
-                            <span class="timeline-nome">${reg.nome || '—'}</span>
-                            <span class="timeline-time">${formatarData(reg.data)} ${reg.horaInicio ? '· ' + reg.horaInicio : ''}</span>
-                        </div>
-                        <div class="timeline-chips">
-                            ${reg.armario ? `<span class="timeline-chip chip-armario"><i class="fas fa-lock" aria-hidden="true"></i> Armário ${reg.armario}</span>` : ''}
-                            ${reg.leito ? `<span class="timeline-chip"><i class="fas fa-bed" aria-hidden="true"></i> Leito ${reg.leito}</span>` : ''}
-                            ${reg.status ? `<span class="timeline-chip ${statusChipClasse}">${reg.status}</span>` : ''}
-                        </div>
-                        <div class="timeline-meta">
-                            ${reg.paciente ? `<span><strong>Paciente:</strong> ${reg.paciente}</span>` : ''}
-                            ${reg.volumes ? `<span><strong>Volumes:</strong> ${reg.volumes}</span>` : ''}
-                            ${reg.horaFim ? `<span><strong>Saída:</strong> ${reg.horaFim}</span>` : ''}
-                            ${reg.usuario ? `<span><strong>Operador:</strong> ${reg.usuario}</span>` : ''}
-                        </div>
-                    </div>`;
-                fragment.appendChild(item);
-            });
-            container.appendChild(fragment);
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = colSpan;
+            td.textContent = mensagem;
+            td.className = tipo === 'loading' ? 'table-loading' : tipo === 'error' ? 'table-error' : 'table-empty';
+            tr.appendChild(td);
+            tbody.innerHTML = '';
+            tbody.appendChild(tr);
         }
         function obterDataHistorico(valorData) {
             if (!valorData) return null;
@@ -7070,9 +6366,6 @@
                 `;
                 tbody.appendChild(tr);
             });
-            if (localStorage.getItem('cosign_hv_view') === 'timeline') {
-                renderTimelineHistorico('visitantes');
-            }
         }
         function aplicarFiltrosHistoricoAcompanhantes() {
             const tbody = elementos.tabelaHistoricoAcompanhantesBody;
@@ -7129,9 +6422,6 @@
                 `;
                 tbody.appendChild(tr);
             });
-            if (localStorage.getItem('cosign_ha_view') === 'timeline') {
-                renderTimelineHistorico('acompanhantes');
-            }
         }
         function atualizarSeletoresUnidade() {
             if (!elementos.unitSelect) return;
@@ -7471,17 +6761,6 @@
                 const reimpressaoHtml = armario.tipo === 'acompanhante'
                     ? `<div class="armario-modal-actions"><button id="btn-reimprimir-ticket" class="armario-modal-action-btn" type="button">Reimprimir comprovante</button></div>`
                     : '';
-                // Acompanhante em uso: dossiê em drawer (não-bloqueante) em vez de
-                // modal. Visitante e contingência mantêm o modal clássico (fluxos
-                // com horário / "mover para armário livre").
-                if (normalizarTexto(armario.tipo) === 'acompanhante' && !ehContingencia) {
-                    abrirDrawerArmario(armario, {
-                        dadosImpressao: dadosImpressaoArmario,
-                        termoPendente,
-                        termoEmAndamento
-                    });
-                    return;
-                }
                 Swal.fire({
                     html: `
                         <div class="armario-modal-card">
@@ -7630,214 +6909,6 @@
                         abrirMovimentacoes(armario.id);
                     }
                 });
-            }
-        }
-        // ===== Drawer / bottom sheet do armário em uso (acompanhante) =====
-        let drawerArmarioEscHandler = null;
-        let drawerDossieToken = 0;
-        let drawerArmarioWired = false;
-        function garantirListenersDrawer() {
-            if (drawerArmarioWired) return;
-            drawerArmarioWired = true;
-            document.getElementById('armario-drawer-scrim')?.addEventListener('click', fecharDrawerArmario);
-            document.getElementById('armario-drawer-close')?.addEventListener('click', fecharDrawerArmario);
-        }
-        function fecharDrawerArmario() {
-            const scrim = document.getElementById('armario-drawer-scrim');
-            const drawer = document.getElementById('armario-drawer');
-            if (!drawer || drawer.hasAttribute('hidden')) return;
-            drawer.classList.remove('show');
-            if (scrim) scrim.classList.remove('show');
-            if (drawerArmarioEscHandler) {
-                document.removeEventListener('keydown', drawerArmarioEscHandler);
-                drawerArmarioEscHandler = null;
-            }
-            const finalizar = () => {
-                drawer.setAttribute('hidden', '');
-                if (scrim) scrim.setAttribute('hidden', '');
-                travaRolagem.remover();
-            };
-            drawer.addEventListener('transitionend', finalizar, { once: true });
-            setTimeout(finalizar, 380);
-        }
-        function abrirDrawerArmario(armario, opcoes = {}) {
-            const scrim = document.getElementById('armario-drawer-scrim');
-            const drawer = document.getElementById('armario-drawer');
-            if (!drawer) return;
-            const tituloEl = document.getElementById('armario-drawer-title');
-            const subEl = document.getElementById('armario-drawer-sub');
-            const statlineEl = document.getElementById('armario-drawer-statline');
-            const bodyEl = document.getElementById('armario-drawer-body');
-            const footEl = document.getElementById('armario-drawer-foot');
-
-            const termoNorm = normalizarTexto(armario.termoStatus);
-            const seloVar = termoNorm === 'finalizado' ? 'ok' : termoNorm === 'em andamento' ? 'andamento' : 'pendente';
-            tituloEl.innerHTML = `Armário ${armario.numero || '-'} <span class="drawer-selo ${seloVar}"><i class="fas fa-file-signature" aria-hidden="true"></i> Termo ${formatarStatusTermo(armario.termoStatus).toLowerCase()}</span>`;
-            const paciente = armario.nomePaciente || '-';
-            const leito = armario.leito ? ` (Leito ${armario.leito})` : '';
-            subEl.textContent = `${armario.nomeVisitante || 'Acompanhante'} · responsável por ${paciente}${leito}`;
-
-            const pills = [];
-            if (armario.horaInicio) pills.push(`<span class="drawer-pill"><i class="fas fa-clock"></i> Desde ${armario.horaInicio}</span>`);
-            pills.push(`<span class="drawer-pill"><i class="fas fa-box"></i> ${formatarVolumeParaExibicao(armario.volumes)} volume(s)</span>`);
-            if (armario.whatsapp) pills.push(`<span class="drawer-pill"><i class="fas fa-phone"></i> ${armario.whatsapp}</span>`);
-            if (armario.unidade) pills.push(`<span class="drawer-pill"><i class="fas fa-hospital"></i> ${armario.unidade}</span>`);
-            statlineEl.innerHTML = pills.join('');
-
-            // Rodapé com as ações (reusa os fluxos existentes)
-            const podeAplicarTermo = opcoes.termoPendente || opcoes.termoEmAndamento;
-            footEl.innerHTML = `
-                <div class="drawer-foot-support">
-                    <button class="drawer-support-btn" id="drawer-btn-imagens" type="button"><i class="fas fa-images"></i> Registros em imagens</button>
-                    ${opcoes.dadosImpressao ? '<button class="drawer-support-btn" id="drawer-btn-reimprimir" type="button"><i class="fas fa-print"></i> Reimprimir comprovante</button>' : ''}
-                    ${podeAplicarTermo ? '<button class="drawer-support-btn destaque" id="drawer-btn-termo" type="button"><i class="fas fa-file-signature"></i> Aplicar termo agora</button>' : ''}
-                </div>
-                <div class="drawer-foot-main">
-                    <button class="drawer-action ghost" id="drawer-btn-movimentar" type="button"><i class="fas fa-right-left"></i> Movimentar itens</button>
-                    <button class="drawer-action danger" id="drawer-btn-liberar" type="button"><i class="fas fa-unlock"></i> Liberar armário</button>
-                </div>`;
-
-            footEl.querySelector('#drawer-btn-movimentar')?.addEventListener('click', () => {
-                fecharDrawerArmario();
-                abrirMovimentacoes(armario.id);
-            });
-            footEl.querySelector('#drawer-btn-liberar')?.addEventListener('click', () => {
-                fecharDrawerArmario();
-                confirmarLiberacaoAcompanhante(armario.id);
-            });
-            footEl.querySelector('#drawer-btn-imagens')?.addEventListener('click', async (ev) => {
-                const finalizar = iniciarLoadingBotao(ev.currentTarget);
-                try { await abrirGaleriaImagensArmario(armario.id); } finally { finalizar(); }
-            });
-            footEl.querySelector('#drawer-btn-reimprimir')?.addEventListener('click', () => {
-                if (opcoes.dadosImpressao) abrirModalImpressaoReserva(opcoes.dadosImpressao);
-            });
-            footEl.querySelector('#drawer-btn-termo')?.addEventListener('click', async (ev) => {
-                const finalizar = iniciarLoadingBotao(ev.currentTarget);
-                try { fecharDrawerArmario(); await abrirTermoWizard(armario.id); } finally { finalizar(); }
-            });
-
-            // Corpo: estado de carregamento; preenche async com inventário + timeline
-            bodyEl.innerHTML = `
-                <div class="drawer-section-title"><i class="fas fa-images"></i> Inventário visual</div>
-                <div class="drawer-inv-loading" id="drawer-inv"><span class="drawer-spinner"></span> Carregando itens...</div>
-                <div class="drawer-section-title"><i class="fas fa-stream"></i> Linha do tempo da custódia</div>
-                <div class="drawer-tl-loading" id="drawer-tl"><span class="drawer-spinner"></span> Carregando histórico...</div>`;
-
-            // Mostra o drawer
-            scrim?.removeAttribute('hidden');
-            drawer.removeAttribute('hidden');
-            travaRolagem.aplicar();
-            // reflow para transição
-            void drawer.offsetWidth;
-            scrim?.classList.add('show');
-            drawer.classList.add('show');
-            document.getElementById('armario-drawer-close')?.focus();
-
-            garantirListenersDrawer();
-            drawerArmarioEscHandler = (e) => { if (e.key === 'Escape') fecharDrawerArmario(); };
-            document.addEventListener('keydown', drawerArmarioEscHandler);
-
-            const token = ++drawerDossieToken;
-            carregarDossieArmario(armario).then((dossie) => {
-                if (token !== drawerDossieToken) return; // drawer já fechou/trocou
-                preencherDossieArmario(dossie);
-            }).catch(() => {
-                if (token !== drawerDossieToken) return;
-                const inv = document.getElementById('drawer-inv');
-                const tl = document.getElementById('drawer-tl');
-                if (inv) inv.innerHTML = '<div class="drawer-empty">Não foi possível carregar o inventário.</div>';
-                if (tl) tl.innerHTML = '<div class="drawer-empty">Não foi possível carregar o histórico.</div>';
-            });
-        }
-        async function carregarDossieArmario(armario) {
-            const parametros = montarPayloadTermo(armario, { incluirFinalizados: true });
-            const [termoResp, movResp] = await Promise.all([
-                callGoogleScript('getTermo', parametros).catch(() => null),
-                callGoogleScript('getMovimentacoes', parametros).catch(() => null)
-            ]);
-            const volumes = [];
-            const eventos = [];
-            if (termoResp && termoResp.success && termoResp.data) {
-                const termo = termoResp.data;
-                (Array.isArray(termo.volumes) ? termo.volumes : []).forEach((vol, i) => {
-                    volumes.push({
-                        descricao: vol.descricao || `Volume ${i + 1}`,
-                        quantidade: vol.quantidade || '',
-                        fotoUrl: vol.fotoUrl || ''
-                    });
-                });
-                if (termo.aplicadoEm) {
-                    eventos.push({
-                        tipo: 'termo',
-                        dataHora: formatarDataHora(termo.aplicadoEm),
-                        titulo: 'Termo assinado',
-                        responsavel: termo.acompanhante || ''
-                    });
-                }
-            }
-            if (movResp && movResp.success && Array.isArray(movResp.data)) {
-                movResp.data.forEach((mov) => {
-                    const tipoNorm = normalizarTexto(mov.tipo);
-                    const itens = normalizarListaItensMovimentacao(mov.itens);
-                    const desc = itens.length
-                        ? itens.map(it => `${Number(it.quantidade)}x ${it.descricao}`).join('; ')
-                        : (mov.descricao || '');
-                    eventos.push({
-                        tipo: tipoNorm.includes('saida') || tipoNorm.includes('saída') ? 'saida' : 'entrada',
-                        dataHora: (mov.data && mov.hora) ? `${mov.data} ${mov.hora}` : formatarDataHora(mov.dataHoraRegistro || ''),
-                        titulo: `${formatarTituloMovimento(tipoNorm) || 'Movimentação'}: ${desc || '—'}`,
-                        responsavel: mov.responsavel || ''
-                    });
-                });
-            }
-            return { volumes, eventos };
-        }
-        function preencherDossieArmario(dossie) {
-            const inv = document.getElementById('drawer-inv');
-            const tl = document.getElementById('drawer-tl');
-            if (inv) {
-                inv.classList.remove('drawer-inv-loading');
-                if (!dossie.volumes.length) {
-                    inv.innerHTML = '<div class="drawer-empty">Nenhum volume registrado.</div>';
-                } else {
-                    const grupo = `drawer-inv-${Date.now()}`;
-                    const comFoto = dossie.volumes.filter(v => v.fotoUrl);
-                    registrarGaleriaImagem(grupo, comFoto.map(v => ({
-                        url: v.fotoUrl, titulo: v.descricao, contexto: 'Inventário', detalhe: v.quantidade ? `Quantidade: ${v.quantidade}` : '', dataHora: '', responsavel: ''
-                    })));
-                    let idxFoto = 0;
-                    inv.innerHTML = `<div class="drawer-inv-grid">${dossie.volumes.map((v) => {
-                        if (v.fotoUrl) {
-                            const idx = idxFoto++;
-                            return `<button type="button" class="drawer-inv-item" data-imagem-modal="true" data-image-group="${grupo}" data-image-index="${idx}" aria-label="Abrir foto: ${v.descricao}">
-                                <span class="drawer-inv-thumb" style="background-image:url('${montarThumbDrive(v.fotoUrl, 300)}')">${v.quantidade ? `<span class="drawer-inv-qtd">${v.quantidade}x</span>` : ''}</span>
-                                <span class="drawer-inv-cap">${v.descricao}</span>
-                            </button>`;
-                        }
-                        return `<div class="drawer-inv-item sem-foto">
-                            <span class="drawer-inv-thumb"><i class="fas fa-box"></i>${v.quantidade ? `<span class="drawer-inv-qtd">${v.quantidade}x</span>` : ''}</span>
-                            <span class="drawer-inv-cap">${v.descricao}</span>
-                        </div>`;
-                    }).join('')}</div>`;
-                }
-            }
-            if (tl) {
-                tl.classList.remove('drawer-tl-loading');
-                if (!dossie.eventos.length) {
-                    tl.innerHTML = '<div class="drawer-empty">Sem movimentações registradas.</div>';
-                } else {
-                    const icone = { termo: 'fa-file-signature', entrada: 'fa-arrow-down', saida: 'fa-arrow-up' };
-                    tl.innerHTML = `<div class="drawer-tl">${dossie.eventos.map(ev => `
-                        <div class="drawer-tl-it ${ev.tipo}">
-                            <span class="drawer-tl-dot"><i class="fas ${icone[ev.tipo] || 'fa-circle'}"></i></span>
-                            <div class="drawer-tl-content">
-                                <div class="drawer-tl-when">${ev.dataHora || '-'}</div>
-                                <div class="drawer-tl-what">${ev.titulo}</div>
-                                ${ev.responsavel ? `<div class="drawer-tl-who"><i class="fas fa-user"></i> ${ev.responsavel}</div>` : ''}
-                            </div>
-                        </div>`).join('')}</div>`;
-                }
             }
         }
         async function moverContingenciaParaArmarioLivre(armarioContingencia) {
@@ -8623,23 +7694,6 @@
                 default:
                     return 'Livre';
             }
-        }
-        // Extrai o FILE_ID de uma URL do Google Drive (formatos uc?export=view&id=,
-        // /file/d/<id>/, open?id=, etc.) para montar a miniatura estável.
-        function extrairDriveFileId(url) {
-            if (!url) return '';
-            const texto = url.toString();
-            const porId = texto.match(/[?&]id=([A-Za-z0-9_-]+)/);
-            if (porId) return porId[1];
-            const porPath = texto.match(/\/d\/([A-Za-z0-9_-]+)/);
-            if (porPath) return porPath[1];
-            return '';
-        }
-        // URL de miniatura confiável do Drive (o uc?export=view é instável como
-        // hotlink de <img>). Cai para a URL original se não conseguir o id.
-        function montarThumbDrive(url, largura = 400) {
-            const id = extrairDriveFileId(url);
-            return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${largura}` : url;
         }
         function formatarStatusTermo(status) {
             const normalizado = normalizarTexto(status);
@@ -11297,10 +10351,6 @@
             const conteudoImagens = imagens.length
                 ? `<div class="registro-imagens-grid">${imagens.map((item, indice) => `
                         <article class="registro-imagem-card">
-                            <button type="button" class="registro-imagem-thumb" data-imagem-modal="true" data-image-group="${grupoGaleria}" data-image-index="${indice}" aria-label="Abrir imagem: ${item.titulo}">
-                                <img src="${montarThumbDrive(item.url)}" alt="${item.titulo}" loading="lazy">
-                                <span class="registro-imagem-thumb-zoom" aria-hidden="true"><i class="fas fa-expand"></i></span>
-                            </button>
                             <div class="registro-imagem-info">
                                 <p class="registro-imagem-contexto">${item.contexto || ''}</p>
                                 <h4 class="registro-imagem-titulo">${item.titulo}</h4>
@@ -11309,6 +10359,7 @@
                                     ${item.dataHora ? `<span><i class="fas fa-clock"></i> ${item.dataHora}</span>` : ''}
                                     ${item.responsavel ? `<span><i class="fas fa-user"></i> ${item.responsavel}</span>` : ''}
                                 </div>
+                                <a class="registro-imagem-link" href="${item.url}" target="_blank" rel="noopener noreferrer">Abrir imagem</a>
                             </div>
                         </article>
                     `).join('')}</div>`
@@ -11927,15 +10978,6 @@
                     }
                 }
             };
-
-            // Janela de "Desfazer" antes de enviar ao backend. A assinatura de
-            // encerramento já foi coletada; se o operador desfizer, descartamos e o
-            // armário permanece ativo (nada é enviado).
-            const prosseguirLiberacao = await mostrarToastDesfazer(`Liberando armário ${armario.numero}...`, { ms: 6000 });
-            if (!prosseguirLiberacao) {
-                mostrarAviso('Liberação desfeita. O armário permanece ativo.');
-                return;
-            }
 
             const atualizouLocal = garantirArmarioLiberadoLocal(id, metodo, confirmacao);
             if (atualizouLocal) {
