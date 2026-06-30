@@ -289,6 +289,11 @@
             const temaFinal = temasValidos.indexOf(tema) !== -1 ? tema : 'light';
             document.documentElement.setAttribute('data-theme', temaFinal);
             atualizarBotaoTema(temaFinal);
+            // Reconcilia a cor da marca: só vale no tema base; nos temas nomeados
+            // a paleta do tema prevalece.
+            if (typeof reconciliarCorMarca === 'function') {
+                reconciliarCorMarca(temaFinal);
+            }
             if (!salvarPreferencia) return;
             const storage = obterArmazenamentoLocal();
             if (!storage) return;
@@ -2764,6 +2769,23 @@
             const c = [1, 2, 3].map(i => Math.max(0, Math.round(parseInt(m[i], 16) * fator)));
             return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
         }
+        let corMarcaAtual = '';
+        // Aplica a cor da marca apenas no tema base (light). Nos temas nomeados
+        // (dark/pink/copa) a paleta do próprio tema deve prevalecer, então o
+        // override inline é removido — senão o estilo inline venceria as regras
+        // [data-theme] e quebraria a cor primária do tema.
+        function reconciliarCorMarca(tema) {
+            const raiz = document.documentElement;
+            const temaAtual = tema || raiz.getAttribute('data-theme') || 'light';
+            const cor = (corMarcaAtual || '').toString().trim();
+            if (temaAtual === 'light' && /^#[0-9a-f]{6}$/i.test(cor)) {
+                raiz.style.setProperty('--color-primary-500', cor);
+                raiz.style.setProperty('--color-primary-600', derivarCorEscura(cor));
+            } else {
+                raiz.style.removeProperty('--color-primary-500');
+                raiz.style.removeProperty('--color-primary-600');
+            }
+        }
         function aplicarBranding(config) {
             const cfg = Object.assign({}, BRANDING_DEFAULTS, config || {});
             estado.config = cfg;
@@ -2779,12 +2801,9 @@
                 logoEl.src = montarThumbDrive(`?id=${cfg.HOSPITAL_LOGO_ID}`, 240);
                 logoEl.alt = `Logo ${hospital}`;
             }
-            // Cor da marca: sobrescreve as CSS vars que o sistema de temas usa
-            const cor = (cfg.BRAND_COLOR || '').toString().trim();
-            if (/^#[0-9a-f]{6}$/i.test(cor)) {
-                document.documentElement.style.setProperty('--color-primary-500', cor);
-                document.documentElement.style.setProperty('--color-primary-600', derivarCorEscura(cor));
-            }
+            // Cor da marca: guarda e aplica respeitando o tema ativo.
+            corMarcaAtual = (cfg.BRAND_COLOR || '').toString().trim();
+            reconciliarCorMarca();
         }
         async function carregarConfig() {
             const resultado = await callGoogleScript('getConfig');

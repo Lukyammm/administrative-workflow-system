@@ -223,6 +223,9 @@
             --z-overlay: 1100;
             --z-critical-overlay: 1200;
             --z-alert: 1250;
+            /* Toasts ficam acima do SweetAlert (popup em --z-alert + 1) para
+               permanecerem visíveis quando um modal está aberto. */
+            --z-toast: 1300;
         }
         [data-theme="dark"] {
             --color-primary-500: #60A5FA;
@@ -1579,7 +1582,7 @@
             position: fixed;
             top: 16px;
             right: 16px;
-            z-index: var(--z-alert);
+            z-index: var(--z-toast);
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -4032,7 +4035,7 @@
             min-width: 120px;
         }
         .table-card-secondary {
-            color: var(--text-light);
+            color: var(--muted-color);
             font-size: 0.93rem;
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -4068,7 +4071,7 @@
         }
         .table-card-detail-label {
             font-weight: 600;
-            color: var(--text-light);
+            color: var(--muted-color);
             flex: 0 0 40%;
         }
         .table-card-detail-value {

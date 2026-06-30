@@ -4420,6 +4420,10 @@ function getConfig() {
 
 function salvarConfig(dados) {
   try {
+    var permissao = validarPermissaoAdmin(dados);
+    if (!permissao.ok) {
+      return { success: false, error: permissao.error };
+    }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Config');
     if (!sheet) {
