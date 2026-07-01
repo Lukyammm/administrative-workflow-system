@@ -166,7 +166,7 @@
             --modal-shadow: 0 30px 80px rgba(15, 23, 42, 0.22);
             --modal-radius: 20px;
             --modal-overlay: color-mix(in srgb, var(--color-neutral-900) 38%, transparent);
-            --modal-overlay-blur: blur(14px);
+            --modal-overlay-blur: none; /* Perf: sem blur de viewport ao abrir modal (o dim translúcido já escurece) */
             --modal-header-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface-color) 96%, #ffffff 4%), var(--surface-color));
             --modal-footer-bg: color-mix(in srgb, var(--surface-color) 92%, var(--light-color) 8%);
             --modal-divider: color-mix(in srgb, var(--dark-color) 10%, transparent);
@@ -195,9 +195,9 @@
             --table-row-border: color-mix(in srgb, var(--dark-color) 6%, transparent);
 
             /* Glass tokens */
-            --glass-blur: blur(14px);
-            --glass-bg: color-mix(in srgb, var(--surface-color) 80%, transparent);
-            --glass-bg-strong: color-mix(in srgb, var(--surface-color) 90%, transparent);
+            --glass-blur: none; /* Perf: blur desativado (backdrop-filter é caríssimo) */
+            --glass-bg: var(--surface-color);
+            --glass-bg-strong: var(--surface-color);
             --glass-border: color-mix(in srgb, var(--color-neutral-0) 35%, transparent);
             --glass-shadow: 0 24px 44px color-mix(in srgb, var(--shadow-color) 72%, transparent);
 
@@ -255,7 +255,7 @@
             --modal-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
             --modal-radius: 20px;
             --modal-overlay: color-mix(in srgb, var(--color-neutral-900) 45%, transparent);
-            --modal-overlay-blur: blur(12px);
+            --modal-overlay-blur: none; /* Perf: sem blur de viewport ao abrir modal (o dim translúcido já escurece) */
             --modal-header-bg: linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 94%, var(--color-neutral-900) 6%), var(--color-surface));
             --modal-footer-bg: color-mix(in srgb, var(--color-surface) 88%, var(--color-neutral-900) 12%);
             --modal-divider: color-mix(in srgb, var(--color-neutral-900) 18%, transparent);
@@ -269,9 +269,9 @@
             --login-feedback-bg: color-mix(in srgb, var(--color-background) 70%, transparent);
             --login-logo-filter: none;
 
-            --glass-blur: blur(16px);
-            --glass-bg: color-mix(in srgb, var(--color-surface) 70%, transparent);
-            --glass-bg-strong: color-mix(in srgb, var(--color-surface) 82%, transparent);
+            --glass-blur: none; /* Perf: blur desativado (backdrop-filter é caríssimo) */
+            --glass-bg: var(--color-surface);
+            --glass-bg-strong: var(--color-surface);
             --glass-border: color-mix(in srgb, var(--color-neutral-900) 18%, transparent);
             --glass-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
         }
@@ -318,9 +318,9 @@
             --login-feedback-bg: color-mix(in srgb, var(--color-background) 78%, transparent);
             --login-logo-filter: none;
 
-            --glass-blur: blur(14px);
-            --glass-bg: color-mix(in srgb, var(--surface-color) 82%, transparent);
-            --glass-bg-strong: color-mix(in srgb, var(--surface-color) 92%, transparent);
+            --glass-blur: none; /* Perf: blur desativado (backdrop-filter é caríssimo) */
+            --glass-bg: var(--surface-color);
+            --glass-bg-strong: var(--surface-color);
             --glass-border: color-mix(in srgb, var(--color-primary-500) 24%, transparent);
             --glass-shadow: 0 24px 44px rgba(61, 46, 54, 0.2);
 
@@ -389,9 +389,9 @@
             --login-feedback-bg: color-mix(in srgb, var(--color-primary-500) 4%, transparent);
             --login-logo-filter: none;
 
-            --glass-blur: blur(14px);
-            --glass-bg: color-mix(in srgb, var(--surface-color) 82%, transparent);
-            --glass-bg-strong: color-mix(in srgb, var(--surface-color) 92%, transparent);
+            --glass-blur: none; /* Perf: blur desativado (backdrop-filter é caríssimo) */
+            --glass-bg: var(--surface-color);
+            --glass-bg-strong: var(--surface-color);
             --glass-border: color-mix(in srgb, var(--color-warning-500) 22%, transparent);
             --glass-shadow: 0 24px 44px rgba(7, 33, 15, 0.18);
 
@@ -983,7 +983,9 @@
             padding: 12px 20px;
             color: white;
             text-decoration: none;
-            transition: all 0.3s;
+            /* Perf: transiciona só o que muda no hover/active, não "all"
+               (evita recalcular todas as propriedades animáveis em cada item). */
+            transition: background-color 0.2s ease, border-left-color 0.2s ease, color 0.2s ease;
             border-left: 4px solid transparent;
             text-align: left;
             position: relative;
@@ -1050,7 +1052,9 @@
             flex: 1;
             margin-left: var(--sidebar-width);
             padding: 20px;
-            transition: all 0.3s;
+            /* Perf: só a margem muda quando a sidebar recolhe; "all" no maior
+               container da página fazia qualquer mudança de estilo animar. */
+            transition: margin-left 0.3s;
             overflow-x: hidden;
         }
         /* Header */
@@ -2653,7 +2657,10 @@
             border-radius: var(--radius-md);
             box-shadow: var(--shadow-sm);
             padding: 16px 16px 14px;
-            transition: all 0.3s ease;
+            /* Perf: transição limitada e sem backdrop-filter. O dashboard pode
+               renderizar 100+ destes cards; backdrop-filter forçava uma camada de
+               composição + blur em cada um, travando scroll e hover. */
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
             cursor: pointer;
             border-left: 0;
             position: relative;
@@ -2661,7 +2668,6 @@
             flex-direction: column;
             gap: 10px;
             border: 1px solid color-mix(in srgb, var(--primary-color) 8%, var(--border-color) 92%);
-            backdrop-filter: blur(8px);
         }
         .armario-card.skeleton {
             position: relative;
@@ -2822,7 +2828,6 @@
             border-radius: 22px !important;
             padding: 26px !important;
             box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
-            backdrop-filter: blur(12px);
         }
         .swal2-premium-title {
             font-size: 1.4rem !important;
