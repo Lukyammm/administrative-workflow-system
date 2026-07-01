@@ -2502,33 +2502,15 @@
                 }
             }
 
-            // Se offline, serve do cache persistente (leituras) ou enfileira (escritas)
+            // IMPORTANTE: nunca bloqueamos uma requisição preventivamente com base em
+            // navigator.onLine. Esse sinal é NOTORIAMENTE não confiável dentro do
+            // iframe sandbox do Google Apps Script (HtmlService) e em webviews —
+            // pode reportar "offline" mesmo com a conexão funcionando, o que travava
+            // o login com a tela em branco. O modo offline só entra em ação após uma
+            // falha de rede REAL (fetch + google.script.run nativo ambos falharem),
+            // tratada no bloco catch abaixo. navigator.onLine fica só para a barra de
+            // status e para disparar a sincronização ao reconectar.
             const ignorarOffline = opcoes._ignorarOffline === true;
-            if (!ignorarOffline && !modoOffline.online) {
-                if (ehLeitura && chaveCache) {
-                    const dadosOffline = modoOffline.lerCache(chaveCache);
-                    if (dadosOffline) {
-                        console.info(`[offline] servindo "${action}" do cache offline`);
-                        return dadosOffline;
-                    }
-                    return { success: false, error: 'Sem conexão e dados não disponíveis no cache.', _offline: true };
-                }
-                // Ações que dependem da resposta imediata não podem ser enfileiradas
-                if (acoesNaoEnfileriaveis.has(action)) {
-                    return { success: false, error: 'Esta operação requer conexão com o servidor.', _offline: true };
-                }
-                // Ação de escrita: enfileira para sincronização posterior
-                modoOffline.enfileirar(action, payload);
-                if (typeof mostrarSucesso === 'function') {
-                    mostrarSucesso('Sem conexão — operação salva e será enviada ao reconectar.');
-                }
-                return {
-                    success: true,
-                    _offline: true,
-                    _enfileirado: true,
-                    message: 'Operação salva localmente e será sincronizada quando a conexão for restaurada.'
-                };
-            }
 
             let atraso = intervaloBaseConfigurado;
             const maxTentativas = Math.max(1, tentativasConfiguradas);
@@ -2604,13 +2586,29 @@
                             }
                             return respostaNativa;
                         } catch (erroNativo) {
-                            // Última chance: cache offline para leituras
+                            // Falha de rede confirmada (fetch + nativo). A partir daqui
+                            // tratamos como offline real.
+                            // Leituras: tenta servir do cache persistente.
                             if (ehLeitura && chaveCache) {
                                 const dadosOffline = modoOffline.lerCache(chaveCache);
                                 if (dadosOffline) {
                                     console.info(`[offline] fallback para cache offline após falha em "${action}"`);
                                     return dadosOffline;
                                 }
+                            }
+                            // Escritas enfileiráveis: salva para sincronizar ao reconectar,
+                            // em vez de só mostrar erro e perder a operação do usuário.
+                            if (!ignorarOffline && !ehLeitura && !acoesNaoEnfileriaveis.has(action)) {
+                                modoOffline.enfileirar(action, payload);
+                                if (typeof mostrarSucesso === 'function') {
+                                    mostrarSucesso('Sem conexão — operação salva e será enviada ao reconectar.');
+                                }
+                                return {
+                                    success: true,
+                                    _offline: true,
+                                    _enfileirado: true,
+                                    message: 'Operação salva localmente e será sincronizada quando a conexão for restaurada.'
+                                };
                             }
                             const mensagemUsuario = erroNativo && erroNativo.mensagemUsuario
                                 ? erroNativo.mensagemUsuario
